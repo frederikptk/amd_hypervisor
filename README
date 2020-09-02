@@ -1,0 +1,29 @@
+# MAH: Mini AMD Hypervisor
+
+A small AMD Hypervisor for Linux systems. It provides a small interface for creating guests, setting registers and donating memory to the guest. MAH is intended to be a minimal hypervisor without capabilities such as complex device emulation.
+
+## Features
+The features MAH provides are:
+ - Donating userspace memory to the guest
+ - Setting registers
+ - Log of all accessed pages
+
+## Example API usage
+A small example for using MAH:
+```
+void scurr();
+```
+A more complete example can be found in the `user` folder.
+
+## Building
+Install the dependencies via:
+```
+sudo apt install gcc make linux-headers-$(uname -r)
+```
+In order to build MAH, clone the repository and execute:
+```
+./build.sh
+```
+
+## TODO
+ - Support for multiple VCPUs and vAPIC support
