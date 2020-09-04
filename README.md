@@ -1,6 +1,8 @@
 # MAH: Mini AMD Hypervisor
 
-A small AMD Hypervisor for Linux systems. It provides a clear interface for creating guests, setting registers and donating memory to the guest. MAH is intended to be a minimal hypervisor without capabilities such as complex device emulation. It is primarily supposed to show how AMD SVM is used and how a more complex hypervisor, such as KVM, works under the hood. In order to be still a comprehensive und easily understandable, MAH is intended to have a small codebase.
+A small AMD SVM (AMD Secure Virtual Machine) Hypervisor for Linux systems. It provides a clear interface for creating guests, setting registers and donating memory to the guest. MAH is intended to be a minimal hypervisor without capabilities such as complex device emulation. It is primarily supposed to show how AMD SVM is used and how a hypervisor, such as KVM, works under the hood. In order to be still a comprehensive und easily understandable, MAH is intended to have a small codebase.
+
+I am happy about any suggestions in order to improve this project! And if you find a bug, please report it. There still might be a few in here, since the project is still in development.
 
 ## Features
 The features MAH provides are:
