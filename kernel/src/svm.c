@@ -64,6 +64,8 @@ int reset_vcpu(internal_guest* g, internal_vcpu* vcpu) {
 	
 	vcpu->vcpu_vmcb->vmcb_clean = 0x0;
 	
+	vcpu->state = VCPU_STATE_CREATED;
+	
 	return SUCCESS;
 }
 
@@ -89,6 +91,7 @@ void run_guest(internal_guest* g) {
 
 void run_vcpu_internal(void* info) {
 	uint64_t efer;
+	uint64_t vm_hsave_pa;
 	internal_vcpu* vcpu = (internal_vcpu*) info;
 	
 	if (vcpu == NULL) return;
@@ -96,10 +99,23 @@ void run_vcpu_internal(void* info) {
 	
 	if (get_cpu() == vcpu->physical_core) {
 		printk(DBG "Running on CPU: %d\n", smp_processor_id());
+		
+		if ((msr_rdmsr(MSR_EFER) & EFER_SVME) == 1) {
+			vcpu->state = VCPU_STATE_FAILED;
+			return;
+		}
+		
+		vcpu->state = VCPU_STATE_RUNNING;
+		
+		vm_hsave_pa = __pa(vcpu->host_vmcb) + 0x400;
+		wrmsrl_safe(MSR_VM_HSAVE_PA, vm_hsave_pa);
+		
 		efer = msr_rdmsr(MSR_EFER);
 		wrmsrl_safe(MSR_EFER, efer | EFER_SVME);
 		run_vcpu_asm(__pa(vcpu->vcpu_vmcb), __pa(vcpu->host_vmcb), (unsigned long)(vcpu->vcpu_regs), vcpu);
 		handle_vmexit(vcpu);
+		
+		vcpu->state = VCPU_STATE_PAUSED;
 	}
 	put_cpu();
 }

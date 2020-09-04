@@ -6,6 +6,8 @@
 
 typedef struct internal_vcpu internal_vcpu;
 
+enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED} typedef vcpu_state;
+
 struct internal_vcpu {
 	internal_vcpu*		next;
 	uint64_t		id;
@@ -13,6 +15,7 @@ struct internal_vcpu {
 	vmcb*			vcpu_vmcb;
 	vmcb*			host_vmcb;
 	gp_regs*		vcpu_regs;
+	vcpu_state		state;
 } typedef internal_vcpu;
 
 struct internal_guest {

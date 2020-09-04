@@ -201,6 +201,10 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			
 			exit_reason = run_vcpu(map_vcpu_id_to_vcpu(exit_reason.vcpu_id, guest));
 			
+			if (map_vcpu_id_to_vcpu(exit_reason.vcpu_id, guest)->state == VCPU_STATE_FAILED) {
+				return -EAGAIN;
+			}
+			
 			if (copy_to_user((void __user *)argp, (void*)&exit_reason, sizeof(user_vcpu_exit))) return -EFAULT;
 			
 			break;
