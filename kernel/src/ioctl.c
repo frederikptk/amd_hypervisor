@@ -17,13 +17,7 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	internal_vcpu*			vcpu;
 	internal_vcpu*			current_vcpu;
 	user_vcpu_exit			exit_reason;
-	unsigned int 			i;
-	unsigned long 			address;
-	pgd_t* 			pgd;
-	p4d_t* 			p4d;
-	pud_t* 			pud;
-	pmd_t* 			pmd;
-	pte_t* 			pte;
+	user_intercept_reasons		intercept_reasons;
 	
 	printk(DBG "Got ioctl cmd: 0x%x\n", cmd);
 	
@@ -165,7 +159,7 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			regs.sysenter_esp   = current_vcpu->vcpu_vmcb->sysenter_esp;
 			regs.sysenter_eip   = current_vcpu->vcpu_vmcb->sysenter_eip;
 			
-			regs.rax = current_vcpu->vcpu_regs->rbx;
+			regs.rbx = current_vcpu->vcpu_regs->rbx;
 			regs.rcx = current_vcpu->vcpu_regs->rcx;
 			regs.rdx = current_vcpu->vcpu_regs->rdx;
 			regs.rdi = current_vcpu->vcpu_regs->rdi;
@@ -208,6 +202,27 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			exit_reason = run_vcpu(map_vcpu_id_to_vcpu(exit_reason.vcpu_id, guest));
 			
 			if (copy_to_user((void __user *)argp, (void*)&exit_reason, sizeof(user_vcpu_exit))) return -EFAULT;
+			
+			break;
+		
+		case MAH_IOCTL_DESTROY_GUEST:
+			guest = NULL;
+			break;
+			
+		case MAH_SET_INTERCEPT_REASONS:
+			TEST_PTR(guest, internal_guest*);
+			TEST_PTR(guest->vcpus, internal_vcpu*);
+			TEST_PTR(argp, unsigned long);
+			TEST_PTR(guest->vcpus->vcpu_vmcb, vmcb*);
+			TEST_PTR(guest->vcpus->host_vmcb, vmcb*);
+			
+			if (copy_from_user((void*)&intercept_reasons, (void __user *)argp, sizeof(user_intercept_reasons))) return -EFAULT;
+			
+			// Update all VMCBs of all VPCUs for the guest.
+			guest->intercept_exceptions = intercept_reasons.intercept_exceptions;
+			guest->intercept = intercept_reasons.intercept;
+			
+			update_intercept_reasons(guest);
 			
 			break;
 			

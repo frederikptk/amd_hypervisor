@@ -7,7 +7,7 @@ CC += ${MY_CFLAGS}
 EXTRA_CFLAGS=-I$(PWD)/include -I$(PWD)/../include
 
 obj-m		+= $(TARGET).o
-$(TARGET)-objs := ./src/guest.o ./src/ioctl.o ./src/memory.o ./src/svm.o ./src/vmexit.o
+$(TARGET)-objs := ./src/guest.o ./src/ioctl.o ./src/memory.o ./src/svm.o ./src/vmrun.o
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build/ M=$(PWD) modules

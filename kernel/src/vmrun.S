@@ -22,20 +22,18 @@ run_vcpu_asm:
     pushq       %r14
     pushq       %r15
     pushq       %rbp
+    pushq       %rcx
     clgi
-
-    //pushq       %rdi // argument 1: phys_addr_guest_vmcb
 
     pushq       %rsi // argument 2: phys_addr_host_vmcb
     movq        %rsi, %rax
-    vmsave  	%rax
+    vmsave      %rax
 
     movq        %rdi, %rax
 
     // load the guest general purpose registers: argument 3: saved_regs of guest
     movq       0(%rdx), %rbx 
     movq       8(%rdx), %rcx
-    //movq       %rdx, 16(%rdx) 
     movq       24(%rdx), %rdi
     movq       32(%rdx), %rsi
     movq       40(%rdx), %r8
@@ -50,59 +48,59 @@ run_vcpu_asm:
     movq       16(%rdx), %rdx
 
     // the vmrun instruction takes the physical address of the VMCB as argument
-	vmload 	    %rax
-	nop
-    vmrun 	    %rax
-	vmsave  	%rax
+    vmload 	%rax
+    vmrun 	%rax
+    vmsave  	%rax
 
     // restore the host state which has not been recovered by #VMEXIT
-    popq        %rax // argument 2: phys_addr_host_vmcb
-    vmload      %rax
+    popq       %rax // argument 2: phys_addr_host_vmcb
+    vmload     %rax
     
+    popq       %rax // argument 4: current executed VCPU
+    
+    /*
     // Save all general-purpose registers on the stack.
     // We need to store the registers manually since they are not covered by the VMCB.
-    //pushq       %rax
-    pushq       %rbx
-    pushq       %rcx
-    pushq       %rdx
-    pushq       %rdi
-    pushq       %rsi
-    pushq       %r8
-    pushq       %r9
-    pushq       %r10
-    pushq       %r11
-    pushq       %r12
-    pushq       %r13
-    pushq       %r14
-    pushq       %r15
-    pushq       %rbp
+    pushq      %rbx
+    pushq      %rcx
+    pushq      %rdx
+    pushq      %rdi
+    pushq      %rsi
+    pushq      %r8
+    pushq      %r9
+    pushq      %r10
+    pushq      %r11
+    pushq      %r12
+    pushq      %r13
+    pushq      %r14
+    pushq      %r15
+    pushq      %rbp
 
-    movq        %rsp, %rdi
-    addq        $0x68, %rdi
-
-    // restore the host general purpose registers
-    /*movq       232 (%rsp), %rax 
-    movq       224 (%rsp), %rbx 
-    movq       216 (%rsp), %rcx
-    movq       208(%rsp), %rdx 
-    //movq       200(%rsp), %rdi
-    movq       192(%rsp), %rsi
-    movq       184(%rsp), %r8
-    movq       176(%rsp), %r9
-    movq       168(%rsp), %r10
-    movq       160(%rsp), %r11
-    movq       152(%rsp), %r12
-    movq       144(%rsp), %r13
-    movq       136(%rsp), %r14
-    movq       128(%rsp), %r15
-    movq       120(%rsp), %rbp*/
-
-    call        handle_vmexit
-
-    addq        $0x70, %rsp
-
+    movq       %rsp, %rdi
+    addq       $0x68, %rdi
     
-    //popq        %rdi // pop argument 1: phys_addr_guest_vmcb and destroy it
+    movq       %rax, %rsi
+
+    call       handle_vmexit
+
+    addq       $0x70, %rsp*/
+    
+    // Copy the guest registers to the VCPU struct
+    movq	40(%rax), %rax
+    movq	%rbx, 0(%rax)
+    movq	%rcx, 8(%rax)
+    movq	%rdx, 16(%rax)
+    movq	%rdi, 24(%rax)
+    movq	%rsi, 32(%rax)
+    movq	%r8,  40(%rax)
+    movq	%r9,  48(%rax)
+    movq	%r10, 56(%rax)
+    movq	%r11, 64(%rax)
+    movq	%r12, 72(%rax)
+    movq	%r13, 80(%rax)
+    movq	%r14, 88(%rax)
+    movq	%r15, 96(%rax)
+    movq	%rbp, 104(%rax)
 
     // restore the host general purpose registers
     popq       %rbp
@@ -121,7 +119,4 @@ run_vcpu_asm:
     popq       %rbx
     popq       %rax
 
-    // Perserve %rax: the return value of vmexit_handler()
-    // it determines wether to stop guest execution or
-    // continue.
     ret

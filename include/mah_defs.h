@@ -81,6 +81,11 @@ struct __attribute__ ((__packed__)) user_vcpu_exit {
 	uint64_t	exitinfo2;
 } typedef user_vcpu_exit;
 
+struct __attribute__ ((__packed__)) user_intercept_reasons {
+	uint32_t	intercept_exceptions;
+	uint64_t	intercept;
+} typedef user_intercept_reasons;
+
 #define ERROR				-1
 #define SUCCESS			0
 
@@ -91,3 +96,4 @@ struct __attribute__ ((__packed__)) user_vcpu_exit {
 #define MAH_IOCTL_GET_REGISTERS		_IOWR(MAH_IOCTL_MAGIC, 0x3, user_arg_registers)
 #define MAH_IOCTL_VCPU_RUN			_IOWR(MAH_IOCTL_MAGIC, 0x4, user_vcpu_exit)
 #define MAH_IOCTL_DESTROY_GUEST		_IO(MAH_IOCTL_MAGIC, 0x6)
+#define MAH_SET_INTERCEPT_REASONS		_IOWR(MAH_IOCTL_MAGIC, 0x7, user_intercept_reasons)
