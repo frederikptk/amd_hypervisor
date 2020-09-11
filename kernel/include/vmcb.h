@@ -119,6 +119,22 @@ struct __attribute__ ((__packed__)) gp_regs {
 	uint64_t 	r14;
 	uint64_t 	r15;
 	uint64_t 	rbp;
+	uint64_t	xmm0 [2];
+	uint64_t	xmm1 [2];
+	uint64_t	xmm2 [2];
+	uint64_t	xmm3 [2];
+	uint64_t	xmm4 [2];
+	uint64_t	xmm5 [2];
+	uint64_t	xmm6 [2];
+	uint64_t	xmm7 [2];
+	uint64_t	xmm8 [2];
+	uint64_t	xmm9 [2];
+	uint64_t	xmm10[2];
+	uint64_t	xmm11[2];
+	uint64_t	xmm12[2];
+	uint64_t	xmm13[2];
+	uint64_t	xmm14[2];
+	uint64_t	xmm15[2];
 } typedef gp_regs;
 
 // Intercept related

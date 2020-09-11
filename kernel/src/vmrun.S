@@ -36,6 +36,22 @@ run_vcpu_asm:
     movq       88(%rdx), %r14
     movq       96(%rdx), %r15
     movq       104(%rdx), %rbp
+    movdqu     112(%rdx), %xmm0
+    movdqu     128(%rdx), %xmm1
+    movdqu     144(%rdx), %xmm2
+    movdqu     160(%rdx), %xmm3
+    movdqu     176(%rdx), %xmm4
+    movdqu     192(%rdx), %xmm5
+    movdqu     208(%rdx), %xmm6
+    movdqu     224(%rdx), %xmm7
+    movdqu     240(%rdx), %xmm8
+    movdqu     256(%rdx), %xmm9
+    movdqu     272(%rdx), %xmm10
+    movdqu     288(%rdx), %xmm11
+    movdqu     304(%rdx), %xmm12
+    movdqu     320(%rdx), %xmm13
+    movdqu     336(%rdx), %xmm14
+    movdqu     352(%rdx), %xmm15
     movq       16(%rdx), %rdx
 
     // the vmrun instruction takes the physical address of the VMCB as argument
@@ -64,6 +80,22 @@ run_vcpu_asm:
     movq	%r14, 88(%rax)
     movq	%r15, 96(%rax)
     movq	%rbp, 104(%rax)
+    movdqu	%xmm0, 112(%rax)
+    movdqu	%xmm1, 128(%rax)
+    movdqu	%xmm2, 144(%rax)
+    movdqu	%xmm3, 160(%rax)
+    movdqu	%xmm4, 176(%rax)
+    movdqu	%xmm5, 192(%rax)
+    movdqu	%xmm6, 208(%rax)
+    movdqu	%xmm7, 224(%rax)
+    movdqu	%xmm8, 240(%rax)
+    movdqu	%xmm9, 256(%rax)
+    movdqu	%xmm10, 272(%rax)
+    movdqu	%xmm11, 288(%rax)
+    movdqu	%xmm12, 304(%rax)
+    movdqu	%xmm13, 320(%rax)
+    movdqu	%xmm14, 336(%rax)
+    movdqu	%xmm15, 352(%rax)
 
     // restore the host general purpose registers
     popq       %rbp
