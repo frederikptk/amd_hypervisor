@@ -100,19 +100,19 @@ void run_vcpu_internal(void* info) {
 	if (get_cpu() == vcpu->physical_core) {
 		printk(DBG "Running on CPU: %d\n", smp_processor_id());
 		
-		if ((msr_rdmsr(MSR_EFER) & EFER_SVME) == 1) {
+		if ((msr_rdmsr(MSR_EFER) & EFER_SVME) != 0) {
 			vcpu->state = VCPU_STATE_FAILED;
 			return;
 		}
 		
 		vcpu->state = VCPU_STATE_RUNNING;
 		
-		vm_hsave_pa = __pa(vcpu->host_vmcb) + 0x400;
+		vm_hsave_pa = __pa(vcpu->host_vmcb);
 		wrmsrl_safe(MSR_VM_HSAVE_PA, vm_hsave_pa);
 		
 		efer = msr_rdmsr(MSR_EFER);
 		wrmsrl_safe(MSR_EFER, efer | EFER_SVME);
-		run_vcpu_asm(__pa(vcpu->vcpu_vmcb), __pa(vcpu->host_vmcb), (unsigned long)(vcpu->vcpu_regs), vcpu);
+		run_vcpu_asm(__pa(vcpu->vcpu_vmcb), __pa(vcpu->host_vmcb), (unsigned long)(vcpu->vcpu_regs));
 		handle_vmexit(vcpu);
 		
 		vcpu->state = VCPU_STATE_PAUSED;

@@ -7,22 +7,13 @@ LC0:
 .globl run_vcpu_asm
 run_vcpu_asm:
     // store all host general purpose registers
-    pushq       %rax
     pushq       %rbx
-    pushq       %rcx
-    pushq       %rdx
-    pushq       %rdi
-    pushq       %rsi
-    pushq       %r8
-    pushq       %r9
-    pushq       %r10
-    pushq       %r11
     pushq       %r12
     pushq       %r13
     pushq       %r14
     pushq       %r15
     pushq       %rbp
-    pushq       %rcx
+    pushq       %rdx
     clgi
 
     pushq       %rsi // argument 2: phys_addr_host_vmcb
@@ -56,37 +47,9 @@ run_vcpu_asm:
     popq       %rax // argument 2: phys_addr_host_vmcb
     vmload     %rax
     
-    popq       %rax // argument 4: current executed VCPU
-    
-    /*
-    // Save all general-purpose registers on the stack.
-    // We need to store the registers manually since they are not covered by the VMCB.
-    pushq      %rbx
-    pushq      %rcx
-    pushq      %rdx
-    pushq      %rdi
-    pushq      %rsi
-    pushq      %r8
-    pushq      %r9
-    pushq      %r10
-    pushq      %r11
-    pushq      %r12
-    pushq      %r13
-    pushq      %r14
-    pushq      %r15
-    pushq      %rbp
-
-    movq       %rsp, %rdi
-    addq       $0x68, %rdi
-    
-    movq       %rax, %rsi
-
-    call       handle_vmexit
-
-    addq       $0x70, %rsp*/
+    popq       %rax // argument 3: saved_regs of guest
     
     // Copy the guest registers to the VCPU struct
-    movq	40(%rax), %rax
     movq	%rbx, 0(%rax)
     movq	%rcx, 8(%rax)
     movq	%rdx, 16(%rax)
@@ -108,15 +71,6 @@ run_vcpu_asm:
     popq       %r14
     popq       %r13
     popq       %r12
-    popq       %r11
-    popq       %r10
-    popq       %r9
-    popq       %r8
-    popq       %rsi
-    popq       %rdi
-    popq       %rdx
-    popq       %rcx
     popq       %rbx
-    popq       %rax
 
     ret
