@@ -16,6 +16,8 @@ struct internal_vcpu {
 	vmcb*			host_vmcb;
 	gp_regs*		vcpu_regs;
 	vcpu_state		state;
+	uint64_t		host_fs_base;
+	uint64_t		host_gs_base;
 } typedef internal_vcpu;
 
 struct internal_guest {
@@ -26,6 +28,9 @@ struct internal_guest {
 	// intercept reasons set in the VMCB for all VCPUs
 	uint32_t		intercept_exceptions;
 	uint64_t		intercept;
+	// the MSR and I/O permission maps will be used by all VPCUs by the guest
+	uint8_t* 		msr_permission_map;
+	uint8_t* 		io_permission_map;
 } typedef internal_guest;
 
 extern internal_guest* guest;

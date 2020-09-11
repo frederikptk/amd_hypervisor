@@ -28,12 +28,12 @@ struct __attribute__ ((__packed__)) vmcb{
 	uint64_t	msrprm_base_pa;
 	uint64_t	tsc_offset;
 	uint32_t	guest_asid;
-	uint8_t	tlb_control;
-	uint8_t	reserved_2[3];
+	uint8_t		tlb_control;
+	uint8_t		reserved_2[3];
 	uint32_t	interrupt_control;
 	uint32_t	interrupt_vector;
 	uint32_t	interrupt_state;
-	uint8_t	reserved_3[4];
+	uint8_t		reserved_3[4];
 	uint64_t	exitcode;
 	uint64_t	exitinfo1;
 	uint64_t	exitinfo2;
@@ -69,9 +69,9 @@ struct __attribute__ ((__packed__)) vmcb{
 	struct segment	tr;
 	uint8_t 	reserved_8[43];
 	uint8_t 	cpl;
-	uint8_t	reserved_9[4];
+	uint8_t		reserved_9[4];
 	uint64_t	efer;
-	uint8_t	reserved_10[112];
+	uint8_t		reserved_10[112];
 	uint64_t	cr4;
 	uint64_t	cr3;
 	uint64_t	cr0;
@@ -79,9 +79,9 @@ struct __attribute__ ((__packed__)) vmcb{
 	uint64_t	dr6;
 	uint64_t	rflags;
 	uint64_t	rip;
-	uint8_t	reserved_11[88];
+	uint8_t		reserved_11[88];
 	uint64_t	rsp;
-	uint8_t	reserved_12[24];
+	uint8_t		reserved_12[24];
 	uint64_t	rax;
 	uint64_t	star;
 	uint64_t	lstar;
@@ -92,7 +92,7 @@ struct __attribute__ ((__packed__)) vmcb{
 	uint64_t	sysenter_esp;
 	uint64_t	sysenter_eip;
 	uint64_t	cr2;
-	uint8_t	reserved_13[32];
+	uint8_t		reserved_13[32];
 	uint64_t	gpat;
 	uint64_t	dbgctl;
 	uint64_t	br_from;
@@ -140,14 +140,13 @@ struct __attribute__ ((__packed__)) gp_regs {
 // Intercept related
 #define INTERCEPT_MSR_PROT		(28 + 32) << 1
 #define INTERCEPT_HLT			((uint64_t)1 << 24)
-#define INTERCEPT_VMRUN		((uint64_t)1 << 32)
+#define INTERCEPT_VMRUN			((uint64_t)1 << 32)
 
 // MSR intercept
 #define MSRPM_SIZE			0x1000 * 4
-extern uint8_t 					msr_permission_map[MSRPM_SIZE];
 
 // Intercept exit codes
 #define VMEXIT_MSR 		0x7c
 #define VMEXIT_HLT		0x78
-#define VMEXIT_VMRUN 		0x80
+#define VMEXIT_VMRUN 	0x80
 #define VMEXIT_NPF		0x400

@@ -52,10 +52,6 @@ int reset_vcpu(internal_guest* g, internal_vcpu* vcpu) {
 
 	vcpu->vcpu_vmcb->efer = EFER_SVME;
 	
-	// Intercept all possible exceptions and instructions
-	vcpu->vcpu_vmcb->intercept_exceptions = 0xffffffff;
-	vcpu->vcpu_vmcb->intercept = 0xffffffffffffffff;
-	
 	// Enable nested paging
 	vcpu->vcpu_vmcb->nested_and_sec_control |= 1;
 	
@@ -63,6 +59,12 @@ int reset_vcpu(internal_guest* g, internal_vcpu* vcpu) {
 	vcpu->vcpu_vmcb->n_cr3 = __pa(g->nested_pagetables);
 	
 	vcpu->vcpu_vmcb->vmcb_clean = 0x0;
+
+	// Intercept all possible exceptions and instructions
+	vcpu->vcpu_vmcb->intercept_exceptions = 0xffffffff;
+	vcpu->vcpu_vmcb->intercept = 0xffffffffffffffff;
+
+	vcpu->vcpu_vmcb->msrprm_base_pa = __pa(g->msr_permission_map);
 	
 	vcpu->state = VCPU_STATE_CREATED;
 	
@@ -92,6 +94,7 @@ void run_guest(internal_guest* g) {
 void run_vcpu_internal(void* info) {
 	uint64_t efer;
 	uint64_t vm_hsave_pa;
+	uint64_t host_fs_base, host_gs_base;
 	internal_vcpu* vcpu = (internal_vcpu*) info;
 	
 	if (vcpu == NULL) return;
@@ -112,8 +115,15 @@ void run_vcpu_internal(void* info) {
 		
 		efer = msr_rdmsr(MSR_EFER);
 		wrmsrl_safe(MSR_EFER, efer | EFER_SVME);
+
+		host_fs_base = msr_rdmsr(MSR_FS_BASE);
+		host_gs_base = msr_rdmsr(MSR_GS_BASE);
+
 		run_vcpu_asm(__pa(vcpu->vcpu_vmcb), __pa(vcpu->host_vmcb), (unsigned long)(vcpu->vcpu_regs));
 		handle_vmexit(vcpu);
+
+		wrmsrl_safe(MSR_FS_BASE, host_fs_base);
+		wrmsrl_safe(MSR_GS_BASE, host_gs_base);
 		
 		vcpu->state = VCPU_STATE_PAUSED;
 	}
@@ -151,6 +161,24 @@ int test_svm_support(void) {
 		printk(KERN_INFO "[AMD_SVM]: AMD SVM disabled at bios\n");
 		return ERROR;
 	}
+
+	return SUCCESS;
+}
+
+int set_msrpm_permission(uint8_t* msr_permission_map, uint32_t msr, int read, int write) {
+	unsigned int idx; // the index in the table
+	unsigned int offset; // the offset of the msr in a single byte
+
+	if (read != 0 || read != 1) return ERROR;
+	if (write != 0 || write != 1) return ERROR;
+
+	idx = (int)(msr / 4);
+	offset = 2 * (msr & 0xf);
+
+	msr_permission_map[idx] = msr_permission_map[idx] & ~(0b11 << offset);
+
+	msr_permission_map[idx] = msr_permission_map[idx] | (read << offset);
+	msr_permission_map[idx] = msr_permission_map[idx] | (write << (offset + 2));
 
 	return SUCCESS;
 }

@@ -13,6 +13,7 @@
 #include <linux/mm.h>
 
 static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long argp) {
+	int i;
 	user_arg_registers 		regs;
 	internal_vcpu*			vcpu;
 	internal_vcpu*			current_vcpu;
@@ -26,10 +27,44 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			guest = (internal_guest*) kmalloc(sizeof(internal_guest), GFP_KERNEL);
 			memset(guest, 0, sizeof(internal_guest));
 			
-			// Allocate a Page Global Directory
+			// Allocate a Page Global Directory as root for the nested pagetables.
 			guest->nested_pagetables = kmalloc(PAGE_SIZE, GFP_KERNEL);
+			TEST_PTR((uint64_t)guest->nested_pagetables, uint64_t)
+
 			memset(guest->nested_pagetables, 0, PAGE_SIZE);
-			
+
+			// SVM offers the possibility to intercept MSR instructions via a 
+			// SVM MSR permissions map (MSR). Each MSR is covered by two bits,
+			// the lsb controls read access and the msb controls write acccess.
+			// The MSR bitmap consists of 4 bit vectors of 2kB each.
+			// MSR bitmap offset        MSR range
+			// 0x0      - 0x7FFF:        0x0        - 0x1FFF
+			// 0x800    - 0xFFFF:        0xC0000000 - 0xC0001FFF
+			// 0x1000   - 0x17FFF:       0xC0010000 - 0xC0011FFF
+			// 0x1800   - 0x1FFFF:       Reserved
+			guest->msr_permission_map = (uint8_t*) kmalloc(MSRPM_SIZE, GFP_KERNEL);
+			TEST_PTR(guest->msr_permission_map, uint8_t*)
+
+			for(i = 0; i < MSRPM_SIZE; i++) guest->msr_permission_map[i] = 0;
+
+			// We only allow direct access to a few selected MSRs.
+			set_msrpm_permission(guest->msr_permission_map, MSR_STAR, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_LSTAR, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_CSTAR, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_SYSENTER_CS, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_SYSENTER_ESP, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_SYSENTER_EIP, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_GS_BASE, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_FS_BASE, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_KERNEL_GS_BASE, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_SYSCALL_MASK, 1, 1);
+			/*set_msrpm_permission(guest->msr_permission_map, MSR_IA32_SPEC_CTRL, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_PRED_CMD, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_LASTBRANCHFROMIP, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_LASTBRANCHTOIP, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_LASTINTFROMIP, 1, 1);
+			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_LASTINTTOIP, 1, 1);*/
+
 			break;
 			
 		case MAH_IOCTL_CREATE_VCPU:
