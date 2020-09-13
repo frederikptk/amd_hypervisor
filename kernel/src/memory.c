@@ -15,7 +15,7 @@ int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int curre
 	uint64_t	vpn = get_vpn_from_level(phys_guest, current_level);
 	uint64_t* 	next_base = NULL;
 	
-	TEST_PTR(base, uint64_t*)
+	TEST_PTR(base, uint64_t*,)
 	
 	if (current_level == wanted_level) {
 		if (wanted_level == 0) base[vpn] = phys_host | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER;
@@ -40,7 +40,7 @@ int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int curre
 int map_to(internal_guest* g, unsigned long phys_guest, unsigned long phys_host, size_t sz) {
 	uint64_t offset;
 	
-	TEST_PTR(g->nested_pagetables, uint64_t*)
+	TEST_PTR(g->nested_pagetables, uint64_t*,)
 	
 	// Map all pages individually
 	for (offset = 0; offset < sz; offset += PAGE_SIZE) {

@@ -16,9 +16,9 @@ u64 msr_rdmsr(u32 msr) {
 }
 
 int reset_vcpu(internal_guest* g, internal_vcpu* vcpu) {
-	TEST_PTR(g, internal_guest*)
-	TEST_PTR(vcpu, internal_vcpu*)
-	TEST_PTR(vcpu->vcpu_vmcb, vmcb*)
+	TEST_PTR(g, internal_guest*,)
+	TEST_PTR(vcpu, internal_vcpu*,)
+	TEST_PTR(vcpu->vcpu_vmcb, vmcb*,)
 
 	memset(vcpu->vcpu_vmcb, 0, sizeof(vmcb));
 	

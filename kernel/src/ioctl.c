@@ -24,12 +24,14 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	
 	switch (cmd) {
 		case MAH_IOCTL_CREATE_GUEST:
+			guest_lock_write();
+
 			guest = (internal_guest*) kmalloc(sizeof(internal_guest), GFP_KERNEL);
 			memset(guest, 0, sizeof(internal_guest));
 			
 			// Allocate a Page Global Directory as root for the nested pagetables.
 			guest->nested_pagetables = kmalloc(PAGE_SIZE, GFP_KERNEL);
-			TEST_PTR((uint64_t)guest->nested_pagetables, uint64_t)
+			TEST_PTR((uint64_t)guest->nested_pagetables, uint64_t, guest_unlock_write())
 
 			memset(guest->nested_pagetables, 0, PAGE_SIZE);
 
@@ -43,7 +45,7 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			// 0x1000   - 0x17FFF:       0xC0010000 - 0xC0011FFF
 			// 0x1800   - 0x1FFFF:       Reserved
 			guest->msr_permission_map = (uint8_t*) kmalloc(MSRPM_SIZE, GFP_KERNEL);
-			TEST_PTR(guest->msr_permission_map, uint8_t*)
+			TEST_PTR(guest->msr_permission_map, uint8_t*, guest_unlock_write())
 
 			for(i = 0; i < MSRPM_SIZE; i++) guest->msr_permission_map[i] = 0;
 
@@ -65,10 +67,14 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_LASTINTFROMIP, 1, 1);
 			set_msrpm_permission(guest->msr_permission_map, MSR_IA32_LASTINTTOIP, 1, 1);*/
 
+			guest_unlock_write();
+
 			break;
 			
 		case MAH_IOCTL_CREATE_VCPU:
-			TEST_PTR(guest, internal_guest*)
+			guest_lock_write();
+
+			TEST_PTR(guest, internal_guest*, guest_unlock_write())
 			
 			// Test if creating a VCPU exceedes the phyiscal cores on the system
 			// TODO
@@ -94,26 +100,30 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			current_vcpu->host_vmcb = kmalloc(PAGE_SIZE, GFP_KERNEL);
 			current_vcpu->vcpu_regs = kmalloc(sizeof(gp_regs), GFP_KERNEL);
 			
-			TEST_PTR(current_vcpu->vcpu_vmcb, vmcb*);
-			TEST_PTR(current_vcpu->host_vmcb, vmcb*);
-			TEST_PTR(current_vcpu->vcpu_regs, gp_regs*);
+			TEST_PTR(current_vcpu->vcpu_vmcb, vmcb*, guest_unlock_write());
+			TEST_PTR(current_vcpu->host_vmcb, vmcb*, guest_unlock_write());
+			TEST_PTR(current_vcpu->vcpu_regs, gp_regs*, guest_unlock_write());
 			
 			reset_vcpu(guest, current_vcpu);
 			
+			guest_unlock_write();
+
 			break;
 			
 		case MAH_IOCTL_SET_REGISTERS:
-			TEST_PTR(guest, internal_guest*)
-			TEST_PTR(guest->vcpus, internal_vcpu*)
-			TEST_PTR(argp, unsigned long)
+			guest_lock_read();
+
+			TEST_PTR(guest, internal_guest*, guest_unlock_read())
+			TEST_PTR(guest->vcpus, internal_vcpu*, guest_unlock_read())
+			TEST_PTR(argp, unsigned long, guest_unlock_read())
 
 			if (copy_from_user((void*)&regs, (void __user *)argp, sizeof(user_arg_registers))) return -EFAULT;
 			
 			current_vcpu = map_vcpu_id_to_vcpu(regs.vpcu_id, guest);
 			
-			TEST_PTR(current_vcpu, internal_vcpu*);
-			TEST_PTR(current_vcpu->vcpu_vmcb, vmcb*);
-			TEST_PTR(current_vcpu->vcpu_regs, gp_regs*);
+			TEST_PTR(current_vcpu, internal_vcpu*, guest_unlock_read());
+			TEST_PTR(current_vcpu->vcpu_vmcb, vmcb*, guest_unlock_read());
+			TEST_PTR(current_vcpu->vcpu_regs, gp_regs*, guest_unlock_read());
 			
 			current_vcpu->vcpu_vmcb->rax = regs.rax;
 			current_vcpu->vcpu_vmcb->rsp = regs.rsp;
@@ -159,21 +169,25 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			memcpy(&current_vcpu->vcpu_vmcb->ldtr, &regs.ldtr, sizeof(segment));
 			memcpy(&current_vcpu->vcpu_vmcb->idtr, &regs.idtr, sizeof(segment));
 			memcpy(&current_vcpu->vcpu_vmcb->tr, &regs.tr, sizeof(segment));
+
+			guest_unlock_read();
 			
 			break;
 			
 		case MAH_IOCTL_GET_REGISTERS:
-			TEST_PTR(guest, internal_guest*)
-			TEST_PTR(guest->vcpus, internal_vcpu*)
-			TEST_PTR(argp, unsigned long)
+			guest_lock_read();
+
+			TEST_PTR(guest, internal_guest*, guest_unlock_read())
+			TEST_PTR(guest->vcpus, internal_vcpu*, guest_unlock_read())
+			TEST_PTR(argp, unsigned long, guest_unlock_read())
 			
 			if (copy_from_user((void*)&regs, (void __user *)argp, sizeof(user_arg_registers))) return -EFAULT;
 			
 			current_vcpu = map_vcpu_id_to_vcpu(regs.vpcu_id, guest);
 			
-			TEST_PTR(current_vcpu, internal_vcpu*);
-			TEST_PTR(current_vcpu->vcpu_vmcb, vmcb*);
-			TEST_PTR(current_vcpu->vcpu_regs, gp_regs*);
+			TEST_PTR(current_vcpu, internal_vcpu*, guest_unlock_read());
+			TEST_PTR(current_vcpu->vcpu_vmcb, vmcb*, guest_unlock_read());
+			TEST_PTR(current_vcpu->vcpu_regs, gp_regs*, guest_unlock_read());
 			
 			regs.rax = current_vcpu->vcpu_vmcb->rax;
 			regs.rsp = current_vcpu->vcpu_vmcb->rsp;
@@ -220,40 +234,62 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			memcpy(&regs.idtr, &current_vcpu->vcpu_vmcb->idtr, sizeof(segment));
 			memcpy(&regs.tr, &current_vcpu->vcpu_vmcb->tr, sizeof(segment));
 			
-			if (copy_to_user((void __user *)argp, (void*)&regs, sizeof(user_arg_registers))) return -EFAULT;
+			if (copy_to_user((void __user *)argp, (void*)&regs, sizeof(user_arg_registers))) {
+				guest_unlock_read();
+				return -EFAULT;
+			}
+
+			guest_unlock_read();
 			
 			break;
 			
 		case MAH_IOCTL_VCPU_RUN:
-			TEST_PTR(guest, internal_guest*);
-			TEST_PTR(guest->vcpus, internal_vcpu*);
-			TEST_PTR(argp, unsigned long);
-			TEST_PTR(guest->vcpus->vcpu_vmcb, vmcb*);
-			TEST_PTR(guest->vcpus->host_vmcb, vmcb*);
-			TEST_PTR(guest->vcpus->vcpu_regs, gp_regs*);
+			guest_lock_read();
+
+			TEST_PTR(guest, internal_guest*, guest_unlock_read());
+			TEST_PTR(guest->vcpus, internal_vcpu*, guest_unlock_read());
+			TEST_PTR(argp, unsigned long, guest_unlock_read());
+			TEST_PTR(guest->vcpus->vcpu_vmcb, vmcb*, guest_unlock_read());
+			TEST_PTR(guest->vcpus->host_vmcb, vmcb*, guest_unlock_read());
+			TEST_PTR(guest->vcpus->vcpu_regs, gp_regs*, guest_unlock_read());
 			
 			if (copy_from_user((void*)&exit_reason, (void __user *)argp, sizeof(user_vcpu_exit))) return -EFAULT;
+
+			current_vcpu = map_vcpu_id_to_vcpu(exit_reason.vcpu_id, guest);
 			
-			exit_reason = run_vcpu(map_vcpu_id_to_vcpu(exit_reason.vcpu_id, guest));
+			exit_reason = run_vcpu(current_vcpu);
 			
 			if (map_vcpu_id_to_vcpu(exit_reason.vcpu_id, guest)->state == VCPU_STATE_FAILED) {
+				guest_unlock_read();
 				return -EAGAIN;
 			}
 			
-			if (copy_to_user((void __user *)argp, (void*)&exit_reason, sizeof(user_vcpu_exit))) return -EFAULT;
+			if (copy_to_user((void __user *)argp, (void*)&exit_reason, sizeof(user_vcpu_exit))) {
+				guest_unlock_read();
+				return -EFAULT;
+			}
+
+			guest_unlock_read();
 			
 			break;
 		
 		case MAH_IOCTL_DESTROY_GUEST:
+			guest_lock_write();
+			
 			guest = NULL;
+			
+			guest_unlock_write();
+			
 			break;
 			
 		case MAH_SET_INTERCEPT_REASONS:
-			TEST_PTR(guest, internal_guest*);
-			TEST_PTR(guest->vcpus, internal_vcpu*);
-			TEST_PTR(argp, unsigned long);
-			TEST_PTR(guest->vcpus->vcpu_vmcb, vmcb*);
-			TEST_PTR(guest->vcpus->host_vmcb, vmcb*);
+			guest_lock_write();
+
+			TEST_PTR(guest, internal_guest*, guest_unlock_write());
+			TEST_PTR(guest->vcpus, internal_vcpu*, guest_unlock_write());
+			TEST_PTR(argp, unsigned long, guest_unlock_write());
+			TEST_PTR(guest->vcpus->vcpu_vmcb, vmcb*, guest_unlock_write());
+			TEST_PTR(guest->vcpus->host_vmcb, vmcb*, guest_unlock_write());
 			
 			if (copy_from_user((void*)&intercept_reasons, (void __user *)argp, sizeof(user_intercept_reasons))) return -EFAULT;
 			
@@ -262,6 +298,8 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			guest->intercept = intercept_reasons.intercept;
 			
 			update_intercept_reasons(guest);
+
+			guest_unlock_write();
 			
 			break;
 			

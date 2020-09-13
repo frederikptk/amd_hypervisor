@@ -69,10 +69,9 @@ In order to build MAH, clone the repository and execute:
 
 ## TODO
  - Support for multiple VCPUs and vAPIC support
- - Locking
  - Log of all accessed pages
  - Check if number of VCPUs is within number of phyiscal cores
- - MSR and IO permissions
+ - IO permissions
  - All exitcodes and instruction intercept definitions
  - Event injection
  - CPU reset: enter realmode instead of protected mode, move code to userland

@@ -2,11 +2,12 @@
 
 #include <stddef.h>
 #include <linux/list.h>
+#include <linux/spinlock.h>
 #include <vmcb.h>
 
 typedef struct internal_vcpu internal_vcpu;
 
-enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED} typedef vcpu_state;
+enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED, VCPU_STATE_DESTROYED} typedef vcpu_state;
 
 struct internal_vcpu {
 	internal_vcpu*		next;
@@ -37,3 +38,8 @@ extern internal_guest* guest;
 
 internal_vcpu* map_vcpu_id_to_vcpu(uint8_t id, internal_guest* g);
 void update_intercept_reasons(internal_guest* g);
+
+void guest_lock_read(void);
+void guest_unlock_read(void);
+void guest_lock_write(void);
+void guest_unlock_write(void);
