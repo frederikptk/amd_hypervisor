@@ -86,14 +86,22 @@ struct __attribute__ ((__packed__)) user_intercept_reasons {
 	uint64_t	intercept;
 } typedef user_intercept_reasons;
 
+struct __attribute__ ((__packed__)) user_memory_region {
+    uint64_t            userspace_addr;
+    uint64_t            guest_addr;
+	uint64_t			size;
+    int                 is_mmio;
+} typedef user_memory_region;
+
 #define ERROR				-1
 #define SUCCESS			0
 
-#define MAH_IOCTL_MAGIC			0xAA
-#define MAH_IOCTL_CREATE_GUEST		_IO(MAH_IOCTL_MAGIC, 0x0)
+#define MAH_IOCTL_MAGIC					0xAA
+#define MAH_IOCTL_CREATE_GUEST			_IO(MAH_IOCTL_MAGIC, 0x0)
 #define MAH_IOCTL_CREATE_VCPU			_IO(MAH_IOCTL_MAGIC, 0x1)
-#define MAH_IOCTL_SET_REGISTERS		_IOWR(MAH_IOCTL_MAGIC, 0x2, user_arg_registers)
-#define MAH_IOCTL_GET_REGISTERS		_IOWR(MAH_IOCTL_MAGIC, 0x3, user_arg_registers)
-#define MAH_IOCTL_VCPU_RUN			_IOWR(MAH_IOCTL_MAGIC, 0x4, user_vcpu_exit)
-#define MAH_IOCTL_DESTROY_GUEST		_IO(MAH_IOCTL_MAGIC, 0x6)
+#define MAH_IOCTL_SET_REGISTERS			_IOWR(MAH_IOCTL_MAGIC, 0x2, user_arg_registers)
+#define MAH_IOCTL_GET_REGISTERS			_IOWR(MAH_IOCTL_MAGIC, 0x3, user_arg_registers)
+#define MAH_IOCTL_VCPU_RUN				_IOWR(MAH_IOCTL_MAGIC, 0x4, user_vcpu_exit)
+#define MAH_IOCTL_DESTROY_GUEST			_IO(MAH_IOCTL_MAGIC, 0x6)
 #define MAH_SET_INTERCEPT_REASONS		_IOWR(MAH_IOCTL_MAGIC, 0x7, user_intercept_reasons)
+#define MAH_SET_MEMORY_REGION			_IOR(MAH_IOCTL_MAGIC, 0x8, user_memory_region)

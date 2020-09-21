@@ -26,7 +26,7 @@ int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int curre
 		
 		// If a page directory is NULL, create a new one.
 		if ((base[vpn] & 0xFFFFFFFFFFFFF000) == 0) {
-			next_base = kmalloc(PAGE_SIZE, GFP_KERNEL);
+			next_base = kzalloc(PAGE_SIZE, GFP_KERNEL);
 			base[vpn] = __pa(next_base) | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER;
 			if (next_base == NULL) {
 				return ERROR;

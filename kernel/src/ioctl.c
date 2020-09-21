@@ -14,11 +14,14 @@
 
 static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long argp) {
 	int i;
-	user_arg_registers 		regs;
-	internal_vcpu*			vcpu;
-	internal_vcpu*			current_vcpu;
-	user_vcpu_exit			exit_reason;
+	user_arg_registers 			regs;
+	internal_vcpu*				vcpu;
+	internal_vcpu*				current_vcpu;
+	internal_memory_region*		current_memory_region, *current_memory_region_it;
+	user_memory_region			memory_region;
+	user_vcpu_exit				exit_reason;
 	user_intercept_reasons		intercept_reasons;
+	struct list_head*			list_it, *list_it_2;
 	
 	printk(DBG "Got ioctl cmd: 0x%x\n", cmd);
 	
@@ -26,14 +29,11 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 		case MAH_IOCTL_CREATE_GUEST:
 			guest_lock_write();
 
-			guest = (internal_guest*) kmalloc(sizeof(internal_guest), GFP_KERNEL);
-			memset(guest, 0, sizeof(internal_guest));
+			guest = (internal_guest*) kzalloc(sizeof(internal_guest), GFP_KERNEL);
 			
 			// Allocate a Page Global Directory as root for the nested pagetables.
-			guest->nested_pagetables = kmalloc(PAGE_SIZE, GFP_KERNEL);
+			guest->nested_pagetables = kzalloc(PAGE_SIZE, GFP_KERNEL);
 			TEST_PTR((uint64_t)guest->nested_pagetables, uint64_t, guest_unlock_write())
-
-			memset(guest->nested_pagetables, 0, PAGE_SIZE);
 
 			// SVM offers the possibility to intercept MSR instructions via a 
 			// SVM MSR permissions map (MSR). Each MSR is covered by two bits,
@@ -44,7 +44,7 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			// 0x800    - 0xFFFF:        0xC0000000 - 0xC0001FFF
 			// 0x1000   - 0x17FFF:       0xC0010000 - 0xC0011FFF
 			// 0x1800   - 0x1FFFF:       Reserved
-			guest->msr_permission_map = (uint8_t*) kmalloc(MSRPM_SIZE, GFP_KERNEL);
+			guest->msr_permission_map = (uint8_t*) kzalloc(MSRPM_SIZE, GFP_KERNEL);
 			TEST_PTR(guest->msr_permission_map, uint8_t*, guest_unlock_write())
 
 			for(i = 0; i < MSRPM_SIZE; i++) guest->msr_permission_map[i] = 0;
@@ -79,8 +79,7 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			// Test if creating a VCPU exceedes the phyiscal cores on the system
 			// TODO
 			
-			vcpu = kmalloc(sizeof(internal_vcpu), GFP_KERNEL);
-			memset(vcpu, 0, sizeof(internal_vcpu));
+			vcpu = kzalloc(sizeof(internal_vcpu), GFP_KERNEL);
 			
 			if (guest->vcpus == NULL) {
 				guest->vcpus = vcpu;
@@ -96,9 +95,9 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			current_vcpu->physical_core = guest->used_cores;
 			guest->used_cores++;
 			
-			current_vcpu->vcpu_vmcb = kmalloc(PAGE_SIZE, GFP_KERNEL);
-			current_vcpu->host_vmcb = kmalloc(PAGE_SIZE, GFP_KERNEL);
-			current_vcpu->vcpu_regs = kmalloc(sizeof(gp_regs), GFP_KERNEL);
+			current_vcpu->vcpu_vmcb = kzalloc(PAGE_SIZE, GFP_KERNEL);
+			current_vcpu->host_vmcb = kzalloc(PAGE_SIZE, GFP_KERNEL);
+			current_vcpu->vcpu_regs = kzalloc(sizeof(gp_regs), GFP_KERNEL);
 			
 			TEST_PTR(current_vcpu->vcpu_vmcb, vmcb*, guest_unlock_write());
 			TEST_PTR(current_vcpu->host_vmcb, vmcb*, guest_unlock_write());
@@ -117,7 +116,10 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			TEST_PTR(guest->vcpus, internal_vcpu*, guest_unlock_read())
 			TEST_PTR(argp, unsigned long, guest_unlock_read())
 
-			if (copy_from_user((void*)&regs, (void __user *)argp, sizeof(user_arg_registers))) return -EFAULT;
+			if (copy_from_user((void*)&regs, (void __user *)argp, sizeof(user_arg_registers))) {
+				guest_unlock_read();
+				return -EFAULT;
+			}
 			
 			current_vcpu = map_vcpu_id_to_vcpu(regs.vpcu_id, guest);
 			
@@ -181,7 +183,10 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			TEST_PTR(guest->vcpus, internal_vcpu*, guest_unlock_read())
 			TEST_PTR(argp, unsigned long, guest_unlock_read())
 			
-			if (copy_from_user((void*)&regs, (void __user *)argp, sizeof(user_arg_registers))) return -EFAULT;
+			if (copy_from_user((void*)&regs, (void __user *)argp, sizeof(user_arg_registers))) {
+				guest_unlock_read();
+				return -EFAULT;
+			}
 			
 			current_vcpu = map_vcpu_id_to_vcpu(regs.vpcu_id, guest);
 			
@@ -276,6 +281,34 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 		case MAH_IOCTL_DESTROY_GUEST:
 			guest_lock_write();
 			
+			TEST_PTR(guest, internal_guest*, guest_unlock_write());
+
+			// Destroy all VCPUs first.
+			current_vcpu = guest->vcpus;
+	
+			if (guest->vcpus != NULL) {
+				while (current_vcpu->next != NULL) {
+					if (current_vcpu == NULL) break;
+					
+					if (current_vcpu->vcpu_vmcb != NULL) kfree(current_vcpu->vcpu_vmcb);
+					if (current_vcpu->host_vmcb != NULL) kfree(current_vcpu->host_vmcb);
+					if (current_vcpu->vcpu_regs != NULL) kfree(current_vcpu->vcpu_regs);
+				}
+			}
+
+			// Destroy all memory regions.
+			list_for_each_safe(list_it, list_it_2, &guest->memory_regions->list) {
+					current_memory_region_it = list_entry(list_it, internal_memory_region, list);
+					list_del(list_it);
+					kfree(current_memory_region_it);
+			}
+
+			// Free all other pointers.
+			if (guest->msr_permission_map != NULL) kfree(guest->msr_permission_map);
+			if (guest->io_permission_map != NULL) kfree(guest->io_permission_map);
+
+			kfree(guest);
+
 			guest = NULL;
 			
 			guest_unlock_write();
@@ -291,7 +324,10 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			TEST_PTR(guest->vcpus->vcpu_vmcb, vmcb*, guest_unlock_write());
 			TEST_PTR(guest->vcpus->host_vmcb, vmcb*, guest_unlock_write());
 			
-			if (copy_from_user((void*)&intercept_reasons, (void __user *)argp, sizeof(user_intercept_reasons))) return -EFAULT;
+			if (copy_from_user((void*)&intercept_reasons, (void __user *)argp, sizeof(user_intercept_reasons))) {
+				guest_unlock_write();
+				return -EFAULT;
+			}
 			
 			// Update all VMCBs of all VPCUs for the guest.
 			guest->intercept_exceptions = intercept_reasons.intercept_exceptions;
@@ -301,6 +337,47 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 			guest_unlock_write();
 			
+			break;
+
+		case MAH_SET_MEMORY_REGION:
+			guest_lock_write();
+
+			current_memory_region = kzalloc(sizeof(internal_memory_region), GFP_KERNEL);
+			TEST_PTR(current_memory_region, internal_memory_region*, guest_unlock_write());
+
+			if (copy_from_user((void*)&memory_region, (void __user *)argp, sizeof(user_memory_region))) {
+				guest_unlock_write();
+				return -EFAULT;
+			}
+
+			current_memory_region->userspace_addr = memory_region.userspace_addr;
+			current_memory_region->guest_addr = memory_region.guest_addr;
+			current_memory_region->size = memory_region.size;
+			current_memory_region->is_mmio = memory_region.is_mmio;
+
+			// First check if there already is a memory region which would overlap with the new one
+			if (guest->memory_regions != NULL) {
+				list_for_each(list_it, &guest->memory_regions->list) {
+					current_memory_region_it = list_entry(list_it, internal_memory_region, list);
+
+					if ((current_memory_region_it->guest_addr <= current_memory_region->guest_addr) && 
+							(current_memory_region_it->guest_addr + current_memory_region_it->size >= current_memory_region->guest_addr)) {
+						kfree(current_memory_region);
+						guest_unlock_write();
+						return -EFAULT;
+					}
+				}
+			}
+
+			// Initialize the list head in case this is the first memory region
+			if (guest->memory_regions == NULL) {
+				guest->memory_regions = current_memory_region;
+				INIT_LIST_HEAD(&current_memory_region->list);
+			} else {
+				list_add(&current_memory_region->list, &guest->memory_regions->list);
+			}
+
+			guest_unlock_write();
 			break;
 			
 		default:

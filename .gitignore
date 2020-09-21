@@ -2,3 +2,5 @@ kernel/mah.ko
 example
 *.mod
 *.cmd
+NOTES
+TODO

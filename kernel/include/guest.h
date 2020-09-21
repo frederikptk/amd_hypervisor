@@ -3,9 +3,12 @@
 #include <stddef.h>
 #include <linux/list.h>
 #include <linux/spinlock.h>
+
 #include <vmcb.h>
+#include <memory.h>
 
 typedef struct internal_vcpu internal_vcpu;
+typedef struct internal_memory_region internal_memory_region;
 
 enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED, VCPU_STATE_DESTROYED} typedef vcpu_state;
 
@@ -25,13 +28,18 @@ struct internal_guest {
 	internal_vcpu* 	vcpus;
 	uint64_t		highest_phys_addr; // contains the number of bytes the guest has available as memory
 	uint64_t		used_cores;
+	
 	void*			nested_pagetables; // map guest physical to host physical memory
+	
 	// intercept reasons set in the VMCB for all VCPUs
 	uint32_t		intercept_exceptions;
 	uint64_t		intercept;
+	
 	// the MSR and I/O permission maps will be used by all VPCUs by the guest
 	uint8_t* 		msr_permission_map;
 	uint8_t* 		io_permission_map;
+
+	internal_memory_region*	memory_regions;
 } typedef internal_guest;
 
 extern internal_guest* guest;

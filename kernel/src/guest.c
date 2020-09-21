@@ -1,4 +1,5 @@
 #include <guest.h>
+#include <memory.h>
 
 internal_guest* guest;
 static DEFINE_RWLOCK(guest_lock);

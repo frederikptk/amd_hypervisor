@@ -1,6 +1,7 @@
 #include <svm.h>
 #include <ioctl.h>
 #include <debug.h>
+#include <memory.h>
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -19,8 +20,6 @@ int reset_vcpu(internal_guest* g, internal_vcpu* vcpu) {
 	TEST_PTR(g, internal_guest*,)
 	TEST_PTR(vcpu, internal_vcpu*,)
 	TEST_PTR(vcpu->vcpu_vmcb, vmcb*,)
-
-	memset(vcpu->vcpu_vmcb, 0, sizeof(vmcb));
 	
 	vcpu->vcpu_vmcb->guest_asid = 1;
 
@@ -57,8 +56,6 @@ int reset_vcpu(internal_guest* g, internal_vcpu* vcpu) {
 	
 	// Set the nested pagetables
 	vcpu->vcpu_vmcb->n_cr3 = __pa(g->nested_pagetables);
-	
-	vcpu->vcpu_vmcb->vmcb_clean = 0x0;
 
 	// Intercept all possible exceptions and instructions
 	vcpu->vcpu_vmcb->intercept_exceptions = 0xffffffff;
@@ -67,17 +64,44 @@ int reset_vcpu(internal_guest* g, internal_vcpu* vcpu) {
 	vcpu->vcpu_vmcb->msrprm_base_pa = __pa(g->msr_permission_map);
 	
 	vcpu->state = VCPU_STATE_CREATED;
+
+	vcpu->vcpu_vmcb->vmcb_clean = 0x0;
 	
 	return SUCCESS;
 }
 
 void handle_vmexit(internal_vcpu* current_vcpu) {
-	uint64_t efer;
+	uint64_t 					efer;
+	internal_memory_region* 	current_memory_region_it;
+	struct list_head*			list_it;
 	
 	asm volatile ("stgi");
 	
 	efer = msr_rdmsr(MSR_EFER);
 	wrmsrl_safe(MSR_EFER, efer & ~EFER_SVME);
+
+	// Check if we need to swap in userspace memory
+	if (current_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF) {
+		if (guest->memory_regions != NULL) {
+			list_for_each(list_it, &guest->memory_regions->list) {
+				current_memory_region_it = list_entry(list_it, internal_memory_region, list);
+
+				// First, check if an MMIO region was accessed
+				if (current_memory_region_it->is_mmio == 1) {
+					// TODO: handle
+				} else {
+					// Check if the fault was during the nested pagetablewalk and if the nested page was not present.
+					if ((current_vcpu->vcpu_vmcb->exitinfo1 & (uint64_t)1) == 0 && (current_vcpu->vcpu_vmcb->exitinfo1 & ((uint64_t)1 >> 33)) != 0) {
+						if ((current_memory_region_it->guest_addr <= current_vcpu->vcpu_vmcb->exitinfo2) &&
+								(current_memory_region_it->guest_addr + current_memory_region_it->size >= current_vcpu->vcpu_vmcb->exitinfo2)) {
+							// TODO: swap in
+							current_memory_region_it->is_present = 1;
+						}
+					}
+				}
+			}
+		}
+	}
 	
 	printk(DBG "handle_vmexit\n");
 }
