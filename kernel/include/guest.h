@@ -11,13 +11,14 @@ typedef struct internal_memory_region internal_memory_region;
 
 #define MAX_NUM_GUESTS          16
 #define MAX_NUM_VCPUS           16
+#define MAX_NUM_MEM_REGIONS     128
 
 extern internal_guest*                 guests[MAX_NUM_GUESTS];
 
 struct internal_guest {
     uint64_t                    id;
     void*                       arch_internal_guest; // will be casted to a arch-dependent guest type
-    internal_memory_region*	    memory_regions;
+    internal_memory_region*	    memory_regions[MAX_NUM_MEM_REGIONS];
     internal_vcpu*              vcpus[MAX_NUM_VCPUS];
     rwlock_t                    vcpu_lock;
 } typedef internal_guest;
@@ -48,9 +49,15 @@ int             insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g);
 int             remove_vcpu(internal_vcpu* vcpu, internal_guest* g);
 void            for_every_vcpu(internal_guest* g, void(*callback)(internal_vcpu*, void*), void* arg);
 
+// Memory region functions
+internal_memory_region*     map_guest_addr_to_memory_region(uint64_t phys_guest, internal_guest* g);
+int                         insert_new_memory_region(internal_memory_region* memory_region, internal_guest* g);
+int                         remove_memory_region(internal_memory_region* memory_region, internal_guest* g);
+void                        for_every_memory_region(internal_guest* g, void(*callback)(internal_memory_region*, void*), void* arg);
+
 // An abstraction for all functions provided by an hypervisor implementation.
 struct internal_mah_ops {
-    int     (*run_vcpu)(internal_vcpu*);
+    int     (*run_vcpu)(internal_vcpu*, internal_guest*);
 
     void*   (*create_arch_internal_vcpu)(internal_guest*);
     int     (*destroy_arch_internal_vcpu)(internal_vcpu*);

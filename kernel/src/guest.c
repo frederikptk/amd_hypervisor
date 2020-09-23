@@ -22,7 +22,7 @@ void guest_list_unlock_write(void) {
 }
 
 internal_guest* map_guest_id_to_guest(uint64_t id) {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < MAX_NUM_GUESTS; i++) {
         if (guests[i] != NULL) {
@@ -34,7 +34,7 @@ internal_guest* map_guest_id_to_guest(uint64_t id) {
 }
 
 int insert_new_guest(internal_guest* g) {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < MAX_NUM_GUESTS; i++) {
         if (guests[i] == NULL) {
@@ -48,7 +48,7 @@ int insert_new_guest(internal_guest* g) {
 }
 
 int remove_guest(internal_guest* g) {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < MAX_NUM_GUESTS; i++) {
         if (guests[i] == g) {
@@ -61,7 +61,7 @@ int remove_guest(internal_guest* g) {
 }
 
 internal_vcpu* map_vcpu_id_to_vcpu(uint64_t id, internal_guest* g) {
-	int i;
+	unsigned int i;
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {
         if (g->vcpus[i] != NULL) {
@@ -73,7 +73,7 @@ internal_vcpu* map_vcpu_id_to_vcpu(uint64_t id, internal_guest* g) {
 }
 
 int insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g) {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {
         if (g->vcpus[i] == NULL) {
@@ -87,7 +87,7 @@ int insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g) {
 }
 
 int remove_vcpu(internal_vcpu* vcpu, internal_guest* g) {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {
         if (g->vcpus[i] == vcpu) {
@@ -100,11 +100,61 @@ int remove_vcpu(internal_vcpu* vcpu, internal_guest* g) {
 }
 
 void for_every_vcpu(internal_guest* g, void(*callback)(internal_vcpu*, void*), void* arg) {
-    int i;
+    unsigned int i;
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {
         if (g->vcpus[i] != NULL) {
             callback(g->vcpus[i], arg);
+        }
+    }
+}
+
+internal_memory_region* map_guest_addr_to_memory_region(uint64_t phys_guest, internal_guest* g) {
+    unsigned int i;
+
+    for (i = 0; i < MAX_NUM_MEM_REGIONS; i++) {
+		if (g->memory_regions[i] != NULL) {
+			if (g->memory_regions[i]->guest_addr >= phys_guest && (g->memory_regions[i]->guest_addr + g->memory_regions[i]->size) < phys_guest) {
+				return g->memory_regions[i];
+			}
+		}
+	}
+
+    return NULL;
+}
+
+int insert_new_memory_region(internal_memory_region* memory_region, internal_guest* g) {
+    unsigned int i;
+
+    for (i = 0; i < MAX_NUM_MEM_REGIONS; i++) {
+        if (g->memory_regions[i] == NULL) {
+            g->memory_regions[i] = memory_region;
+            return SUCCESS;
+        }
+    }
+
+    return ERROR;
+}
+
+int remove_memory_region(internal_memory_region* memory_region, internal_guest* g) {
+    unsigned int i;
+
+    for (i = 0; i < MAX_NUM_MEM_REGIONS; i++) {
+        if (g->memory_regions[i] == memory_region) {
+            g->memory_regions[i] = NULL;
+            return SUCCESS;
+        }
+    }
+
+    return ERROR;
+}
+
+void for_every_memory_region(internal_guest* g, void(*callback)(internal_memory_region*, void*), void* arg) {
+    unsigned int i;
+
+    for (i = 0; i < MAX_NUM_MEM_REGIONS; i++) {
+        if (g->memory_regions[i] != NULL) {
+            callback(g->memory_regions[i], arg);
         }
     }
 }

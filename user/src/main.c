@@ -27,7 +27,7 @@ int main() {
 	int				ctl_fd;
 	void*				guest_page;
 	user_arg_registers		regs;
-	user_vcpu_exit			exit;
+	user_vcpu_run			run_data;
 	
 	printf("Running example...\n");
 	
@@ -63,11 +63,7 @@ int main() {
 	
 	// Run the VCPU
 	printf("Run vcpu\n");
-	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_VCPU_RUN, &exit))
-	
-	printf("Exit reason: 0x%lx\n", exit.exitcode);
-	printf("Exit info 1: 0x%lx\n", exit.exitinfo1);
-	printf("Exit info 2: 0x%lx\n", exit.exitinfo2);
+	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_VCPU_RUN, &run_data))
 	
 	// Test the result
 	printf("Get registers\n");

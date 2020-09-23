@@ -9,7 +9,7 @@
 
 void* svm_create_arch_internal_guest(void) {
 	svm_internal_guest* svm_g;
-	int i;
+	unsigned int i;
 
 	svm_g = (svm_internal_guest*) kzalloc(sizeof(internal_guest), GFP_KERNEL);
 	TEST_PTR(svm_g, svm_internal_guest*,,NULL)

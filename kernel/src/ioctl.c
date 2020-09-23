@@ -11,18 +11,18 @@
 #include <linux/sched.h>
 #include <linux/vmalloc.h>
 #include <linux/mm.h>
+#include <linux/version.h>
 
 static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long argp) {
-	int 						i;
 	uint64_t					id;
-	internal_guest*				g;
+	internal_guest				*g;
+	internal_vcpu				*vcpu;
+	internal_vcpu				*current_vcpu;
+	internal_memory_region		*current_memory_region;
+
 	user_arg_registers 			regs;
-	internal_vcpu*				vcpu;
-	internal_vcpu*				current_vcpu;
-	internal_memory_region*		current_memory_region, *current_memory_region_it;
 	user_memory_region			memory_region;
-	user_vcpu_exit				exit_reason;
-	struct list_head*			list_it, *list_it_2;
+	user_vcpu_run				run_data;
 	
 	printk(DBG "Got ioctl cmd: 0x%x\n", cmd);
 	
@@ -162,79 +162,55 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 				return -EFAULT;
 			}
 
+			guest_list_unlock_read();
+
 			break;
 			
 		case MAH_IOCTL_VCPU_RUN:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
-			/*guest_lock_read();
-
-			TEST_PTR(guest, internal_guest*, guest_unlock_read());
-			TEST_PTR(guest->vcpus, internal_vcpu*, guest_unlock_read());
-			TEST_PTR(argp, unsigned long, guest_unlock_read());
-			TEST_PTR(guest->vcpus->vcpu_vmcb, vmcb*, guest_unlock_read());
-			TEST_PTR(guest->vcpus->host_vmcb, vmcb*, guest_unlock_read());
-			TEST_PTR(guest->vcpus->vcpu_regs, gp_regs*, guest_unlock_read());
-			
-			if (copy_from_user((void*)&exit_reason, (void __user *)argp, sizeof(user_vcpu_exit))) return -EFAULT;
-
-			current_vcpu = map_vcpu_id_to_vcpu(exit_reason.vcpu_id, guest);
-			
-			exit_reason = run_vcpu(current_vcpu);
-			
-			if (map_vcpu_id_to_vcpu(exit_reason.vcpu_id, guest)->state == VCPU_STATE_FAILED) {
-				guest_unlock_read();
-				return -EAGAIN;
-			}
-			
-			if (copy_to_user((void __user *)argp, (void*)&exit_reason, sizeof(user_vcpu_exit))) {
-				guest_unlock_read();
+			if (copy_from_user((void*)&run_data, (void __user *)argp, sizeof(user_vcpu_run))) {
 				return -EFAULT;
 			}
 
-			guest_unlock_read();*/
+			guest_list_lock_read();
+			g = map_guest_id_to_guest(id);
+			TEST_PTR(g, internal_guest*, guest_list_unlock_read(), -EFAULT)
+			guest_list_unlock_read();
+
+			read_lock(&g->vcpu_lock);
+			current_vcpu = map_vcpu_id_to_vcpu(regs.vcpu_id, g);
+			mah_ops.run_vcpu(current_vcpu, g);
+			read_unlock(&g->vcpu_lock);
+
+			guest_list_unlock_read();
 			
 			break;
 
 		case MAH_SET_MEMORY_REGION:
-			/*guest_lock_write();
-
-			current_memory_region = kzalloc(sizeof(internal_memory_region), GFP_KERNEL);
-			TEST_PTR(current_memory_region, internal_memory_region*, guest_unlock_write());
+			// TODO: allocate pages array
 
 			if (copy_from_user((void*)&memory_region, (void __user *)argp, sizeof(user_memory_region))) {
-				guest_unlock_write();
 				return -EFAULT;
 			}
+
+			guest_list_lock_read();
+			g = map_guest_id_to_guest(memory_region.guest_id);
+			TEST_PTR(g, internal_guest*, guest_list_unlock_read(), -EFAULT)
+
+			current_memory_region = kzalloc(sizeof(internal_memory_region), GFP_KERNEL);
+			TEST_PTR(current_memory_region, internal_memory_region*,, -ENOMEM);
 
 			current_memory_region->userspace_addr = memory_region.userspace_addr;
 			current_memory_region->guest_addr = memory_region.guest_addr;
 			current_memory_region->size = memory_region.size;
 			current_memory_region->is_mmio = memory_region.is_mmio;
+			current_memory_region->pages = kmalloc_array((int)(memory_region.size / PAGE_SIZE) + 1, sizeof(struct page *), GFP_KERNEL);
 
 			// First check if there already is a memory region which would overlap with the new one
-			if (guest->memory_regions != NULL) {
-				list_for_each(list_it, &guest->memory_regions->list) {
-					current_memory_region_it = list_entry(list_it, internal_memory_region, list);
+			insert_new_memory_region(current_memory_region, g);
 
-					if ((current_memory_region_it->guest_addr <= current_memory_region->guest_addr) && 
-							(current_memory_region_it->guest_addr + current_memory_region_it->size >= current_memory_region->guest_addr)) {
-						kfree(current_memory_region);
-						guest_unlock_write();
-						return -EFAULT;
-					}
-				}
-			}
-
-			// Initialize the list head in case this is the first memory region
-			if (guest->memory_regions == NULL) {
-				guest->memory_regions = current_memory_region;
-				INIT_LIST_HEAD(&current_memory_region->list);
-			} else {
-				list_add(&current_memory_region->list, &guest->memory_regions->list);
-			}
-
-			guest_unlock_write();*/
+			guest_list_unlock_read();
 			break;
 			
 		default:
@@ -245,10 +221,16 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	return 0;
 }
 
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(5,5,0)
 static struct file_operations proc_ctl_fops = {
 	.owner = THIS_MODULE,
 	.unlocked_ioctl = unlocked_ioctl,
 };
+#else
+static struct proc_ops proc_ctl_fops = {
+	.proc_ioctl = unlocked_ioctl,
+};
+#endif
 
 void init_ctl_interface(){
     proc_create(PROC_PATH, 0, NULL, &proc_ctl_fops);

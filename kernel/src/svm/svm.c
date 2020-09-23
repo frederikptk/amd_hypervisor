@@ -9,16 +9,16 @@
 #include <asm/msr.h>
 #include <linux/smp.h>
 
-inline svm_internal_guest* to_svm_guest(internal_guest* g) {
+inline svm_internal_guest* to_svm_guest(internal_guest *g) {
 	return (svm_internal_guest*)(g->arch_internal_guest);
 }
 
-inline svm_internal_vcpu* to_svm_vcpu(internal_vcpu* vcpu){
+inline svm_internal_vcpu* to_svm_vcpu(internal_vcpu *vcpu){
 	return (svm_internal_vcpu*)(vcpu->arch_internal_vcpu);
 }
 
-int svm_reset_vcpu(svm_internal_vcpu* svm_vcpu, internal_guest* g) {
-	svm_internal_guest* svm_g;
+int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g) {
+	svm_internal_guest 	*svm_g;
 
 	TEST_PTR(svm_vcpu, svm_internal_vcpu*,, ERROR)
 	TEST_PTR(svm_vcpu->vcpu_vmcb, vmcb*,, ERROR)
@@ -80,49 +80,28 @@ u64 msr_rdmsr(u32 msr) {
 	return a | ((u64) d << 32);
 }
 
-void svm_handle_vmexit(internal_vcpu* vcpu) {
-	svm_internal_vcpu* 			svm_vcpu;
-	uint64_t 					efer;
-	
-	asm volatile ("stgi");
+void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
+	svm_internal_vcpu 			*svm_vcpu;
 
-	TEST_PTR(vcpu, internal_vcpu*,,)
 	svm_vcpu = to_svm_vcpu(vcpu);
-	TEST_PTR(svm_vcpu, svm_internal_vcpu*,,)
-	TEST_PTR(svm_vcpu->vcpu_vmcb, vmcb*,,)
-	
-	efer = msr_rdmsr(MSR_EFER);
-	wrmsrl_safe(MSR_EFER, efer & ~EFER_SVME);
 
-	// Check if we need to swap in userspace memory
-	/*if (current_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF) {
-		if (guest->memory_regions != NULL) {
-			list_for_each(list_it, &guest->memory_regions->list) {
-				current_memory_region_it = list_entry(list_it, internal_memory_region, list);
-
-				// First, check if an MMIO region was accessed
-				if (current_memory_region_it->is_mmio == 1) {
-					// TODO: handle
-				} else {
-					// Check if the fault was during the nested pagetablewalk and if the nested page was not present.
-					if ((current_vcpu->vcpu_vmcb->exitinfo1 & (uint64_t)1) == 0 && (current_vcpu->vcpu_vmcb->exitinfo1 & ((uint64_t)1 >> 33)) != 0) {
-						if ((current_memory_region_it->guest_addr <= current_vcpu->vcpu_vmcb->exitinfo2) &&
-								(current_memory_region_it->guest_addr + current_memory_region_it->size >= current_vcpu->vcpu_vmcb->exitinfo2)) {
-							// TODO: swap in
-							current_memory_region_it->is_present = 1;
-						}
-					}
-				}
-			}
-		}
-	}*/
+	switch (svm_vcpu->vcpu_vmcb->exitcode) {
+		case VMEXIT_NPF:
+			// TODO: also pass guest
+			// Only handle pagefaults in the nested pagetables
+			if ((svm_vcpu->vcpu_vmcb->exitinfo2 & NPF_IN_VMM_PAGE) != 0)
+				handle_pagefault(__va(svm_vcpu->vcpu_vmcb->n_cr3), svm_vcpu->vcpu_vmcb->exitinfo1, g);
+			break;
+		default:
+			printk(DBG "Unknown exit code: 0x%llx, exitinfo1: 0x%llx, exitinfo2: 0x%llx\n", svm_vcpu->vcpu_vmcb->exitcode, svm_vcpu->vcpu_vmcb->exitinfo1, svm_vcpu->vcpu_vmcb->exitinfo2);
+	}
 	
 	printk(DBG "handle_vmexit\n");
 }
 
-void svm_run_vcpu_internal(void* info) {
-	internal_vcpu* 				vcpu;
-	svm_internal_vcpu* 			svm_vcpu;
+void svm_run_vcpu_internal(void *info) {
+	internal_vcpu 				*vcpu;
+	svm_internal_vcpu 			*svm_vcpu;
 	uint64_t 					efer;
 	uint64_t 					vm_hsave_pa;
 	uint64_t 					host_fs_base, host_gs_base;
@@ -150,18 +129,22 @@ void svm_run_vcpu_internal(void* info) {
 		host_gs_base = msr_rdmsr(MSR_GS_BASE);
 
 		svm_run_vcpu_asm(__pa(svm_vcpu->vcpu_vmcb), __pa(svm_vcpu->host_vmcb), (unsigned long)(svm_vcpu->vcpu_regs));
-		svm_handle_vmexit(vcpu);
 
 		wrmsrl_safe(MSR_FS_BASE, host_fs_base);
 		wrmsrl_safe(MSR_GS_BASE, host_gs_base);
 		
 		vcpu->state = VCPU_STATE_PAUSED;
+
+		asm volatile ("stgi");
+
+		efer = msr_rdmsr(MSR_EFER);
+		wrmsrl_safe(MSR_EFER, efer & ~EFER_SVME);
 	}
 	put_cpu();
 }
 
-int svm_run_vcpu(internal_vcpu* vcpu) {
-	svm_internal_vcpu* 			svm_vcpu;
+int svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g) {
+	svm_internal_vcpu 			*svm_vcpu;
 
 	TEST_PTR(vcpu, internal_vcpu*,, ERROR)
 	svm_vcpu = to_svm_vcpu(vcpu);
@@ -171,6 +154,8 @@ int svm_run_vcpu(internal_vcpu* vcpu) {
 
 	if (vcpu != NULL) {
 		on_each_cpu((void*)svm_run_vcpu_internal, vcpu, 1);
+
+		svm_handle_vmexit(vcpu, g);
 	
 		return SUCCESS;
 	} else {
@@ -195,7 +180,7 @@ int svm_check_support(void) {
 	return SUCCESS;
 }
 
-int svm_set_msrpm_permission(uint8_t* msr_permission_map, uint32_t msr, int read, int write) {
+int svm_set_msrpm_permission(uint8_t *msr_permission_map, uint32_t msr, int read, int write) {
 	unsigned int idx; // the index in the table
 	unsigned int offset; // the offset of the msr in a single byte
 

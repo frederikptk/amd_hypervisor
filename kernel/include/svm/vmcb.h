@@ -150,3 +150,12 @@ struct __attribute__ ((__packed__)) gp_regs {
 #define VMEXIT_HLT		0x78
 #define VMEXIT_VMRUN 	0x80
 #define VMEXIT_NPF		0x400
+
+// NPF exitcodes
+#define NPF_IN_VMM_PAGE			(uint64_t)1 << 33
+#define NPF_IN_GUEST_PAGE		(uint64_t)1 << 32
+// TODO
+#define NPF_USER_ACCESS			(uint64_t)1 << 0
+#define NPF_WRITE_ACCESS		(uint64_t)1 << 0
+#define NPF_CODE_ACCESS			(uint64_t)1 << 0
+#define NPF_NOT_PRESENT			(uint64_t)1 << 0

@@ -74,15 +74,13 @@ struct __attribute__ ((__packed__)) user_arg_registers {
 	uint64_t	sysenter_eip;
 } typedef user_arg_registers;
 
-struct __attribute__ ((__packed__)) user_vcpu_exit {
-	uint64_t	id;
-
-	uint64_t	exitcode;
-	uint64_t	exitinfo1;
-	uint64_t	exitinfo2;
-} typedef user_vcpu_exit;
+struct __attribute__ ((__packed__)) user_vcpu_run {
+	uint64_t	guest_id;
+	uint64_t	vcpu_id;
+} typedef user_vcpu_run;
 
 struct __attribute__ ((__packed__)) user_memory_region {
+	uint64_t			guest_id;
     uint64_t            userspace_addr;
     uint64_t            guest_addr;
 	uint64_t			size;
@@ -97,6 +95,6 @@ struct __attribute__ ((__packed__)) user_memory_region {
 #define MAH_IOCTL_CREATE_VCPU			_IO(MAH_IOCTL_MAGIC, 0x1)
 #define MAH_IOCTL_SET_REGISTERS			_IOWR(MAH_IOCTL_MAGIC, 0x2, user_arg_registers)
 #define MAH_IOCTL_GET_REGISTERS			_IOWR(MAH_IOCTL_MAGIC, 0x3, user_arg_registers)
-#define MAH_IOCTL_VCPU_RUN				_IOWR(MAH_IOCTL_MAGIC, 0x4, user_vcpu_exit)
+#define MAH_IOCTL_VCPU_RUN				_IOR(MAH_IOCTL_MAGIC, 0x4, user_vcpu_run)
 #define MAH_IOCTL_DESTROY_GUEST			_IO(MAH_IOCTL_MAGIC, 0x6)
 #define MAH_SET_MEMORY_REGION			_IOR(MAH_IOCTL_MAGIC, 0x7, user_memory_region)

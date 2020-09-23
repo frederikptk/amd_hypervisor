@@ -6,6 +6,8 @@
 #include <linux/slab.h>
 #include <asm/pgtable.h>
 #include <linux/vmalloc.h>
+#include <linux/mm.h>
+#include <linux/sched.h>
 
 uint64_t get_vpn_from_level(uint64_t virt_addr, unsigned int level) {
     return (virt_addr >> (level*9 + 12)) & (uint64_t)0x1ff;
@@ -22,10 +24,10 @@ int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int curre
 		else base[vpn] = phys_host | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER | _PAGE_SPECIAL;
 		return SUCCESS;
 	} else {
-		next_base = (uint64_t*)(__va(base[vpn] & 0xFFFFFFFFFFFFF000));
+		next_base = (uint64_t*)(__va(base[vpn] & PAGE_TABLE_MASK));
 		
 		// If a page directory is NULL, create a new one.
-		if ((base[vpn] & 0xFFFFFFFFFFFFF000) == 0) {
+		if ((base[vpn] & PAGE_TABLE_MASK) == 0) {
 			next_base = kzalloc(PAGE_SIZE, GFP_KERNEL);
 			base[vpn] = __pa(next_base) | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER;
 			if (next_base == NULL) {
@@ -46,4 +48,54 @@ int map_to(uint64_t* base, unsigned long phys_guest, unsigned long phys_host, si
 	}
 	
 	return SUCCESS;
+}
+
+int map_user_memory(uint64_t* base, uint64_t phys_guest, uint64_t virt_user, internal_memory_region* region, internal_guest* g) {
+	struct 			vm_area_struct *vma;
+	int 			err;
+	unsigned int 	idx;
+
+	mmap_read_lock(current->mm);
+	vma = find_vma(current->mm, virt_user);
+
+	if (!vma) {
+		mmap_read_unlock(current->mm);
+		return ERROR;
+	}
+
+	idx = (unsigned int)(virt_user - region->userspace_addr);
+
+	if (idx > region->size / PAGE_SIZE) {
+		mmap_read_unlock(current->mm);
+		return ERROR;
+	}
+
+	err = pin_user_pages(virt_user, 1, FOLL_LONGTERM | FOLL_WRITE | FOLL_FORCE, region->pages + idx, NULL);
+
+	mmap_read_unlock(current->mm);
+
+	return SUCCESS;
+}
+
+int handle_pagefault(uint64_t* base, uint64_t phys_guest, internal_guest* g) {
+	unsigned int i;
+	internal_memory_region* region;
+
+	// First, map the guest address which is responsible for the fault to a memory region.
+	region = map_guest_addr_to_memory_region(phys_guest, g);
+	
+	if (region == NULL) goto err;
+
+	// It the region is not a MMIO region, simply do lazy faulting and "swap in" the page.
+	if (!region->is_mmio) {
+		return map_user_memory(base, phys_guest, g->memory_regions[i]->guest_addr + g->memory_regions[i]->size - phys_guest, region, g);
+	}
+
+	// Else: TODO: MMIO handling
+	if (region->is_mmio) {
+		return SUCCESS;
+	}
+
+err:
+	return ERROR;
 }
