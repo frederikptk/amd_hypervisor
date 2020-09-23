@@ -22,7 +22,8 @@ struct __attribute__ ((__packed__)) user_arg_segment {
 } typedef user_arg_segment;
 
 struct __attribute__ ((__packed__)) user_arg_registers {
-	uint64_t	vpcu_id;
+	uint64_t	guest_id;
+	uint64_t	vcpu_id;
 
 	// General-purpose registers
 	uint64_t 	rax;
@@ -74,17 +75,12 @@ struct __attribute__ ((__packed__)) user_arg_registers {
 } typedef user_arg_registers;
 
 struct __attribute__ ((__packed__)) user_vcpu_exit {
-	uint64_t	vcpu_id;
+	uint64_t	id;
 
 	uint64_t	exitcode;
 	uint64_t	exitinfo1;
 	uint64_t	exitinfo2;
 } typedef user_vcpu_exit;
-
-struct __attribute__ ((__packed__)) user_intercept_reasons {
-	uint32_t	intercept_exceptions;
-	uint64_t	intercept;
-} typedef user_intercept_reasons;
 
 struct __attribute__ ((__packed__)) user_memory_region {
     uint64_t            userspace_addr;
@@ -103,5 +99,4 @@ struct __attribute__ ((__packed__)) user_memory_region {
 #define MAH_IOCTL_GET_REGISTERS			_IOWR(MAH_IOCTL_MAGIC, 0x3, user_arg_registers)
 #define MAH_IOCTL_VCPU_RUN				_IOWR(MAH_IOCTL_MAGIC, 0x4, user_vcpu_exit)
 #define MAH_IOCTL_DESTROY_GUEST			_IO(MAH_IOCTL_MAGIC, 0x6)
-#define MAH_SET_INTERCEPT_REASONS		_IOWR(MAH_IOCTL_MAGIC, 0x7, user_intercept_reasons)
-#define MAH_SET_MEMORY_REGION			_IOR(MAH_IOCTL_MAGIC, 0x8, user_memory_region)
+#define MAH_SET_MEMORY_REGION			_IOR(MAH_IOCTL_MAGIC, 0x7, user_memory_region)

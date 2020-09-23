@@ -1,0 +1,39 @@
+#pragma once
+
+#include <svm/vmcb.h>
+#include <guest.h>
+#include <mah_defs.h>
+
+struct svm_internal_vcpu {
+	vmcb*			vcpu_vmcb;
+	vmcb*			host_vmcb;
+	gp_regs*		vcpu_regs;
+	uint64_t		host_fs_base;
+	uint64_t		host_gs_base;
+} typedef svm_internal_vcpu;
+
+struct svm_internal_guest {
+	uint64_t		highest_phys_addr; // contains the number of bytes the guest has available as memory
+	uint64_t		used_cores;
+	
+	void*			nested_pagetables; // map guest physical to host physical memory
+	
+	// intercept reasons set in the VMCB for all VCPUs
+	uint32_t		intercept_exceptions;
+	uint64_t		intercept;
+	
+	// the MSR and I/O permission maps will be used by all VPCUs by the guest
+	uint8_t* 		msr_permission_map;
+	uint8_t* 		io_permission_map;
+} typedef svm_internal_guest;
+
+inline svm_internal_guest* to_svm_guest(internal_guest* g);
+inline svm_internal_vcpu*  to_svm_vcpu(internal_vcpu* g);
+
+void svm_handle_vmexit(internal_vcpu* current_vcpu);
+int svm_run_vcpu(internal_vcpu* vcpu);
+int svm_reset_vcpu(svm_internal_vcpu* svm_vcpu, internal_guest* g);
+int svm_check_support(void);
+int svm_set_msrpm_permission(uint8_t* msr_permission_map, uint32_t msr, int read, int write);
+
+extern void svm_run_vcpu_asm(unsigned long phys_addr_guest_vmcb, unsigned long phys_addr_host_vmcb, unsigned long saved_guest_regs_addr);

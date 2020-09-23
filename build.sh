@@ -4,12 +4,15 @@ echo "################################"
 echo "      BUILD KERNEL MODULE"
 echo "################################"
 cd kernel && make && cd ..
-rm kernel/src/*.o
-rm kernel/*.o
-rm kernel/*.mod
-rm kernel/*.symvers
-rm kernel/*.mod.c
-rm kernel/*.order
+
+find . -name \*.o -type f -delete
+find . -name \*.o.d -type f -delete
+find . -name \*.cmd -type f -delete
+find . -name \*.mod -type f -delete
+find . -name \*.symvers -type f -delete
+find . -name \*.mod.c -type f -delete
+find . -name \*.order -type f -delete
+
 echo "DONE"
 
 echo "################################"

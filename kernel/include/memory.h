@@ -15,4 +15,4 @@ struct internal_memory_region {
     struct list_head    list;
 } typedef internal_memory_region;
 
-int map_to(internal_guest* g, unsigned long phys_guest, unsigned long phys_host, size_t sz);
+int map_to(uint64_t* base, unsigned long phys_guest, unsigned long phys_host, size_t sz);

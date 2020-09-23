@@ -1,53 +1,65 @@
 #pragma once
 
-#include <stddef.h>
-#include <linux/list.h>
+#include <memory.h>
+#include <mah_defs.h>
+
 #include <linux/spinlock.h>
 
-#include <vmcb.h>
-#include <memory.h>
-
+typedef struct internal_guest internal_guest;
 typedef struct internal_vcpu internal_vcpu;
 typedef struct internal_memory_region internal_memory_region;
+
+#define MAX_NUM_GUESTS          16
+#define MAX_NUM_VCPUS           16
+
+extern internal_guest*                 guests[MAX_NUM_GUESTS];
+
+struct internal_guest {
+    uint64_t                    id;
+    void*                       arch_internal_guest; // will be casted to a arch-dependent guest type
+    internal_memory_region*	    memory_regions;
+    internal_vcpu*              vcpus[MAX_NUM_VCPUS];
+    rwlock_t                    vcpu_lock;
+} typedef internal_guest;
+
+// Functions assume guest_list_lock to be locked.
+internal_guest* map_guest_id_to_guest(uint64_t id);
+int             insert_new_guest(internal_guest* g);
+int             remove_guest(internal_guest* g);
+
+// Locking the list of all guests
+void guest_list_lock_read(void);
+void guest_list_unlock_read(void);
+void guest_list_lock_write(void);
+void guest_list_unlock_write(void);
 
 enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED, VCPU_STATE_DESTROYED} typedef vcpu_state;
 
 struct internal_vcpu {
-	internal_vcpu*		next;
-	uint64_t		id;
-	uint64_t		physical_core; // the phyiscal core id the vcpu is mapped to
-	vmcb*			vcpu_vmcb;
-	vmcb*			host_vmcb;
-	gp_regs*		vcpu_regs;
-	vcpu_state		state;
-	uint64_t		host_fs_base;
-	uint64_t		host_gs_base;
+    uint64_t                    id;
+    vcpu_state		            state;
+    uint64_t                    physical_core;
+    void*                       arch_internal_vcpu; // will be casted to a arch-dependent guest type
 } typedef internal_vcpu;
 
-struct internal_guest {
-	internal_vcpu* 	vcpus;
-	uint64_t		highest_phys_addr; // contains the number of bytes the guest has available as memory
-	uint64_t		used_cores;
-	
-	void*			nested_pagetables; // map guest physical to host physical memory
-	
-	// intercept reasons set in the VMCB for all VCPUs
-	uint32_t		intercept_exceptions;
-	uint64_t		intercept;
-	
-	// the MSR and I/O permission maps will be used by all VPCUs by the guest
-	uint8_t* 		msr_permission_map;
-	uint8_t* 		io_permission_map;
+// Functions assume guest_lock to be locked.
+internal_vcpu* 	map_vcpu_id_to_vcpu(uint64_t id, internal_guest* g);
+int             insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g);
+int             remove_vcpu(internal_vcpu* vcpu, internal_guest* g);
+void            for_every_vcpu(internal_guest* g, void(*callback)(internal_vcpu*, void*), void* arg);
 
-	internal_memory_region*	memory_regions;
-} typedef internal_guest;
+// An abstraction for all functions provided by an hypervisor implementation.
+struct internal_mah_ops {
+    int     (*run_vcpu)(internal_vcpu*);
 
-extern internal_guest* guest;
+    void*   (*create_arch_internal_vcpu)(internal_guest*);
+    int     (*destroy_arch_internal_vcpu)(internal_vcpu*);
+    void*   (*create_arch_internal_guest) (void);
+    void    (*destroy_arch_internal_guest)(internal_guest*);
 
-internal_vcpu* map_vcpu_id_to_vcpu(uint8_t id, internal_guest* g);
-void update_intercept_reasons(internal_guest* g);
+    void    (*set_vcpu_registers)(internal_vcpu*, user_arg_registers*);
+    void    (*get_vcpu_registers)(internal_vcpu*, user_arg_registers*);
+    void    (*set_memory_region) (internal_guest*, internal_memory_region*);
+} typedef internal_mah_ops;
 
-void guest_lock_read(void);
-void guest_unlock_read(void);
-void guest_lock_write(void);
-void guest_unlock_write(void);
+extern internal_mah_ops mah_ops;

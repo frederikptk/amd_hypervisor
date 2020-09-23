@@ -4,8 +4,8 @@
 
     .text
 LC0:
-.globl run_vcpu_asm
-run_vcpu_asm:
+.globl svm_run_vcpu_asm
+svm_run_vcpu_asm:
     // store all host general purpose registers
     pushq       %rbx
     pushq       %r12
