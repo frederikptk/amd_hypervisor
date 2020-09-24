@@ -74,10 +74,10 @@ struct __attribute__ ((__packed__)) user_arg_registers {
 	uint64_t	sysenter_eip;
 } typedef user_arg_registers;
 
-struct __attribute__ ((__packed__)) user_vcpu_run {
+struct __attribute__ ((__packed__)) user_vcpu_guest_id {
 	uint64_t	guest_id;
 	uint64_t	vcpu_id;
-} typedef user_vcpu_run;
+} typedef user_vcpu_guest_id;
 
 struct __attribute__ ((__packed__)) user_memory_region {
 	uint64_t			guest_id;
@@ -91,10 +91,10 @@ struct __attribute__ ((__packed__)) user_memory_region {
 #define SUCCESS			0
 
 #define MAH_IOCTL_MAGIC					0xAA
-#define MAH_IOCTL_CREATE_GUEST			_IO(MAH_IOCTL_MAGIC, 0x0)
-#define MAH_IOCTL_CREATE_VCPU			_IO(MAH_IOCTL_MAGIC, 0x1)
-#define MAH_IOCTL_SET_REGISTERS			_IOWR(MAH_IOCTL_MAGIC, 0x2, user_arg_registers)
-#define MAH_IOCTL_GET_REGISTERS			_IOWR(MAH_IOCTL_MAGIC, 0x3, user_arg_registers)
-#define MAH_IOCTL_VCPU_RUN				_IOR(MAH_IOCTL_MAGIC, 0x4, user_vcpu_run)
-#define MAH_IOCTL_DESTROY_GUEST			_IO(MAH_IOCTL_MAGIC, 0x6)
-#define MAH_SET_MEMORY_REGION			_IOR(MAH_IOCTL_MAGIC, 0x7, user_memory_region)
+#define MAH_IOCTL_CREATE_GUEST			_IOW  (MAH_IOCTL_MAGIC, 0x0, uint64_t)
+#define MAH_IOCTL_CREATE_VCPU			_IOWR (MAH_IOCTL_MAGIC, 0x1, user_vcpu_guest_id)
+#define MAH_IOCTL_SET_REGISTERS			_IOWR (MAH_IOCTL_MAGIC, 0x2, user_arg_registers)
+#define MAH_IOCTL_GET_REGISTERS			_IOWR (MAH_IOCTL_MAGIC, 0x3, user_arg_registers)
+#define MAH_IOCTL_VCPU_RUN				_IOR  (MAH_IOCTL_MAGIC, 0x4, user_vcpu_guest_id)
+#define MAH_IOCTL_DESTROY_GUEST			_IOR  (MAH_IOCTL_MAGIC, 0x6, uint64_t)
+#define MAH_SET_MEMORY_REGION			_IOR  (MAH_IOCTL_MAGIC, 0x7, user_memory_region)

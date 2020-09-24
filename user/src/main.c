@@ -24,10 +24,12 @@ char* example_code = "\x83\xc0\x04\xbb\x03\x00\x00\x00\x89\xd9\x83\xe9\x01\xf4";
 #define TEST_IOCTL_RET(x) if (x) return EXIT_FAILURE;
 
 int main() {
-	int				ctl_fd;
-	void*				guest_page;
+	int						ctl_fd;
+	void*					guest_page;
 	user_arg_registers		regs;
-	user_vcpu_run			run_data;
+	user_vcpu_guest_id		id_data;
+	uint64_t				guest_id, vcpu_id;
+	user_memory_region		region;
 	
 	printf("Running example...\n");
 	
@@ -39,31 +41,42 @@ int main() {
 	
 	// Create a guest
 	printf("Create guest\n");
-	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_CREATE_GUEST))
+	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_CREATE_GUEST, &guest_id))
 	
 	// Create a VCPU for the guest
 	printf("Create vcpu\n");
-	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_CREATE_VCPU))
+	vcpu_id = guest_id;
+	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_CREATE_VCPU, &vcpu_id))
+
+	printf("Guest ID: 0x%lx, VCPU ID: 0x%lx\n", guest_id, vcpu_id);
 	
 	// Donate the page to the guest
 	printf("Donate memory\n");
-	guest_page = mmap(NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_SHARED, ctl_fd, 0);
+	guest_page = mmap(NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_ANONYMOUS, -1, 0);
 	if (guest_page == NULL) {
 		printf("Could not allocate guest page\n");
 		return EXIT_FAILURE;
 	}
 	memset(guest_page, 0xf4, getpagesize());
 	memcpy(guest_page, example_code, 14);
-	
+	region.guest_id 		= guest_id;
+	region.userspace_addr	= (uint64_t)guest_page;
+	region.guest_addr		= 0;
+	region.size				= 0x1000;
+	region.is_mmio			= 0;
+	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_SET_MEMORY_REGION, &region))
+
 	// Get the registers and set EBX and ECX
 	printf("Set registers\n");
+	regs.guest_id = guest_id;
+	regs.vcpu_id  = vcpu_id;
 	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_GET_REGISTERS, &regs))
 	
 	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_SET_REGISTERS, &regs))
 	
 	// Run the VCPU
 	printf("Run vcpu\n");
-	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_VCPU_RUN, &run_data))
+	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_VCPU_RUN, &id_data))
 	
 	// Test the result
 	printf("Get registers\n");

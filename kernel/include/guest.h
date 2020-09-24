@@ -4,6 +4,7 @@
 #include <mah_defs.h>
 
 #include <linux/spinlock.h>
+#include <linux/kfifo.h>
 
 typedef struct internal_guest internal_guest;
 typedef struct internal_vcpu internal_vcpu;
@@ -12,6 +13,7 @@ typedef struct internal_memory_region internal_memory_region;
 #define MAX_NUM_GUESTS          16
 #define MAX_NUM_VCPUS           16
 #define MAX_NUM_MEM_REGIONS     128
+#define MAX_PAGETABLES_COUNT    0x1000 // Maximum number of pagetables supported
 
 extern internal_guest*                 guests[MAX_NUM_GUESTS];
 
@@ -21,6 +23,7 @@ struct internal_guest {
     internal_memory_region*	    memory_regions[MAX_NUM_MEM_REGIONS];
     internal_vcpu*              vcpus[MAX_NUM_VCPUS];
     rwlock_t                    vcpu_lock;
+    struct kfifo                pagetables_fifo; // Will be used to keep track on what to free upon guest destruction
 } typedef internal_guest;
 
 // Functions assume guest_list_lock to be locked.

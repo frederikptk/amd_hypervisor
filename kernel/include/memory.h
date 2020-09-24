@@ -20,3 +20,4 @@ struct internal_memory_region {
 int map_to(uint64_t* base, unsigned long phys_guest, unsigned long phys_host, size_t sz);
 int map_user_memory(uint64_t* base, uint64_t phys_guest, uint64_t virt_user, internal_memory_region* region, internal_guest* g); // Called by hypervisor pagefault handler.
 int handle_pagefault(uint64_t* base, uint64_t phys_guest, internal_guest* g);
+int free_nested_pages(uint64_t* base, internal_guest* g);

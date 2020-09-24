@@ -8,12 +8,13 @@
 #include <linux/vmalloc.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
+#include <linux/mmap_lock.h>
 
 uint64_t get_vpn_from_level(uint64_t virt_addr, unsigned int level) {
     return (virt_addr >> (level*9 + 12)) & (uint64_t)0x1ff;
 }
 
-int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int current_level, unsigned int wanted_level, uint64_t* base) {
+int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int current_level, unsigned int wanted_level, uint64_t* base, internal_guest* g) {
 	uint64_t	vpn = get_vpn_from_level(phys_guest, current_level);
 	uint64_t* 	next_base = NULL;
 	
@@ -29,6 +30,8 @@ int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int curre
 		// If a page directory is NULL, create a new one.
 		if ((base[vpn] & PAGE_TABLE_MASK) == 0) {
 			next_base = kzalloc(PAGE_SIZE, GFP_KERNEL);
+			kfifo_in(&k->pagetables_fifo, &next_base, sizeof(uint64_t));
+
 			base[vpn] = __pa(next_base) | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER;
 			if (next_base == NULL) {
 				return ERROR;
@@ -36,15 +39,15 @@ int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int curre
 		}
 	}
 	
-	return map_to_recursive(phys_guest, phys_host, current_level - 1, wanted_level, next_base);
+	return map_to_recursive(phys_guest, phys_host, current_level - 1, wanted_level, next_base, g);
 }
 
-int map_to(uint64_t* base, unsigned long phys_guest, unsigned long phys_host, size_t sz) {
+int map_to(uint64_t* base, unsigned long phys_guest, unsigned long phys_host, size_t sz, internal_guest* g) {
 	uint64_t offset;
 	
 	// Map all pages individually
 	for (offset = 0; offset < sz; offset += PAGE_SIZE) {
-		if (map_to_recursive(phys_guest + offset, phys_host + offset, 3, 0, base) == ERROR) return ERROR;
+		if (map_to_recursive(phys_guest + offset, phys_host + offset, 3, 0, base, g) == ERROR) return ERROR;
 	}
 	
 	return SUCCESS;
@@ -56,25 +59,29 @@ int map_user_memory(uint64_t* base, uint64_t phys_guest, uint64_t virt_user, int
 	unsigned int 	idx;
 
 	mmap_read_lock(current->mm);
-	vma = find_vma(current->mm, virt_user);
 
+	vma = find_vma(current->mm, virt_user);
 	if (!vma) {
-		mmap_read_unlock(current->mm);
-		return ERROR;
+		err = ERROR;
+		goto ret;
 	}
 
 	idx = (unsigned int)(virt_user - region->userspace_addr);
 
 	if (idx > region->size / PAGE_SIZE) {
-		mmap_read_unlock(current->mm);
-		return ERROR;
+		err = ERROR;
+		goto ret;
 	}
 
 	err = pin_user_pages(virt_user, 1, FOLL_LONGTERM | FOLL_WRITE | FOLL_FORCE, region->pages + idx, NULL);
 
+	// TODO: get physical address of user page
+	err = map_to(base, phys_guest, NULL, PAGE_SIZE, g);
+
+ret:
 	mmap_read_unlock(current->mm);
 
-	return SUCCESS;
+	return err;
 }
 
 int handle_pagefault(uint64_t* base, uint64_t phys_guest, internal_guest* g) {
@@ -88,7 +95,7 @@ int handle_pagefault(uint64_t* base, uint64_t phys_guest, internal_guest* g) {
 
 	// It the region is not a MMIO region, simply do lazy faulting and "swap in" the page.
 	if (!region->is_mmio) {
-		return map_user_memory(base, phys_guest, g->memory_regions[i]->guest_addr + g->memory_regions[i]->size - phys_guest, region, g);
+		return map_user_memory(phys_guest, g->memory_regions[i]->guest_addr + g->memory_regions[i]->size - phys_guest, region, g);
 	}
 
 	// Else: TODO: MMIO handling
@@ -98,4 +105,35 @@ int handle_pagefault(uint64_t* base, uint64_t phys_guest, internal_guest* g) {
 
 err:
 	return ERROR;
+}
+
+int unmap_user_memory(internal_memory_region* region, internal_guest* g) {
+	int 			err;
+
+	mmap_read_lock(current->mm);
+
+	for (i = 0; i < (region->size / PAGE_SIZE); i++) {
+		if (region->pages[i] != NULL)
+			unpin_user_pages(virt_user, 1, FOLL_LONGTERM | FOLL_WRITE | FOLL_FORCE, &((region->pages)[i]), NULL);
+
+	}
+	mmap_read_unlock(current->mm);
+
+	return err;
+}
+
+int free_nested_pages(uint64_t* base, internal_guest* g) {
+	int				ret;
+	uint64_t		pagetable;
+
+	// First, unmap the nested pagetables
+	while (kfifo_avail(&k->pagetables_fifo)) {
+		ret = kfifo_out(&k->pagetables_fifo, &pagetable, sizeof(uint64_t));
+		
+		if (ret != sizeof(uint64_t)) return ERROR;
+		if (pagetable != NULL) kfree(pagetable);
+	}
+
+	// Next, unpin all pinned pages
+	for_every_memory_region(g, unmap_user_memory, g);
 }

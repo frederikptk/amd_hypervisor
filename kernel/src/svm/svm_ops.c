@@ -105,7 +105,8 @@ void svm_destroy_arch_internal_guest(internal_guest* g) {
 	if (svm_g->msr_permission_map != NULL) kfree(svm_g->msr_permission_map);
 	if (svm_g->io_permission_map != NULL)  kfree(svm_g->io_permission_map);
 
-	// TODO: Clear all nested pagetables
+	// Clear all nested pagetables
+	free_nested_pages(svm_g->nested_pagetables, g);
 }
 
 void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {

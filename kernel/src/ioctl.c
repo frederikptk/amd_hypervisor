@@ -22,7 +22,7 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 	user_arg_registers 			regs;
 	user_memory_region			memory_region;
-	user_vcpu_run				run_data;
+	user_vcpu_guest_id			id_data;
 	
 	printk(DBG "Got ioctl cmd: 0x%x\n", cmd);
 	
@@ -40,16 +40,26 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			TEST_PTR((void*)(g->arch_internal_guest), void*, kfree(g); guest_list_unlock_write(), -ENOMEM)
 
 			if (insert_new_guest(g) == ERROR) {
+				kfree(g);
+				mah_ops.destroy_arch_internal_guest(g);
+				guest_list_unlock_write();
+				return -ENOMEM;
+			}
+
+			if (kfifo_alloc(&g->pagetables_fifo, MAX_PAGETABLES_COUNT * sizeof(uint64_t), GFP_KERNEL)) {
+				kfree(g);
+				mah_ops.destroy_arch_internal_guest(g);
+				guest_list_unlock_write();
 				return -ENOMEM;
 			}
 
 			// Return the guest ID to the user.
-			if (copy_to_user((void __user *)argp, (void*)&g->id, sizeof(int))) {
+			if (copy_to_user((void __user *)argp, (void*)&g->id, sizeof(uint64_t))) {
+				kfree(g);
+				mah_ops.destroy_arch_internal_guest(g);
 				guest_list_unlock_write();
 				return -EFAULT;
 			}
-
-			rwlock_init(&g->vcpu_lock);
 
 			guest_list_unlock_write();
 			break;
@@ -76,8 +86,6 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			for_every_vcpu(g, (void(*)(internal_vcpu*, void*))kfree, NULL);
 			for_every_vcpu(g, (void(*)(internal_vcpu*, void*))remove_vcpu, g);
 
-			// TODO: Destroy all memory regions.
-
 			// Free all other pointers.
 			kfree(g);
 			mah_ops.destroy_arch_internal_guest(g);
@@ -89,13 +97,13 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 		case MAH_IOCTL_CREATE_VCPU:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
-			if (copy_from_user((void*)&id, (void __user *)argp, sizeof(uint64_t))) {
+			if (copy_from_user((void*)&id_data, (void __user *)argp, sizeof(user_vcpu_guest_id))) {
 				return -EFAULT;
 			}
 
 			guest_list_lock_read();
 
-			g = map_guest_id_to_guest(id);
+			g = map_guest_id_to_guest(id_data.guest_id);
 			TEST_PTR(g, internal_guest*, guest_list_unlock_write(), -EFAULT)
 
 			vcpu = kmalloc(sizeof(internal_vcpu), GFP_KERNEL);
@@ -116,7 +124,19 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 				guest_list_unlock_read();
 				return -ENOMEM;
 			}
-			
+
+			id_data.vcpu_id = vcpu->id;
+
+			// Return the VCPU ID to the user.
+			if (copy_to_user((void __user *)argp, (void*)&id_data, sizeof(user_vcpu_guest_id))) {
+				write_unlock(&g->vcpu_lock);
+				mah_ops.destroy_arch_internal_vcpu(vcpu);
+				kfree(vcpu);
+				write_unlock(&g->vcpu_lock);
+				guest_list_unlock_read();
+				return -ENOMEM;
+			}
+
 			write_unlock(&g->vcpu_lock);
 
 			guest_list_unlock_read();
@@ -169,17 +189,17 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 		case MAH_IOCTL_VCPU_RUN:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
-			if (copy_from_user((void*)&run_data, (void __user *)argp, sizeof(user_vcpu_run))) {
+			if (copy_from_user((void*)&id_data, (void __user *)argp, sizeof(user_vcpu_guest_id))) {
 				return -EFAULT;
 			}
 
 			guest_list_lock_read();
-			g = map_guest_id_to_guest(id);
+			g = map_guest_id_to_guest(id_data.guest_id);
 			TEST_PTR(g, internal_guest*, guest_list_unlock_read(), -EFAULT)
 			guest_list_unlock_read();
 
 			read_lock(&g->vcpu_lock);
-			current_vcpu = map_vcpu_id_to_vcpu(regs.vcpu_id, g);
+			current_vcpu = map_vcpu_id_to_vcpu(id_data.vcpu_id, g);
 			mah_ops.run_vcpu(current_vcpu, g);
 			read_unlock(&g->vcpu_lock);
 
