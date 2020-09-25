@@ -2,6 +2,7 @@
 
 #include <memory.h>
 #include <mah_defs.h>
+#include <stddef.h>
 
 #include <linux/spinlock.h>
 #include <linux/kfifo.h>
@@ -9,11 +10,11 @@
 typedef struct internal_guest internal_guest;
 typedef struct internal_vcpu internal_vcpu;
 typedef struct internal_memory_region internal_memory_region;
+typedef struct internal_mmu internal_mmu;
 
 #define MAX_NUM_GUESTS          16
 #define MAX_NUM_VCPUS           16
 #define MAX_NUM_MEM_REGIONS     128
-#define MAX_PAGETABLES_COUNT    0x1000 // Maximum number of pagetables supported
 
 extern internal_guest*                 guests[MAX_NUM_GUESTS];
 
@@ -23,7 +24,7 @@ struct internal_guest {
     internal_memory_region*	    memory_regions[MAX_NUM_MEM_REGIONS];
     internal_vcpu*              vcpus[MAX_NUM_VCPUS];
     rwlock_t                    vcpu_lock;
-    struct kfifo                pagetables_fifo; // Will be used to keep track on what to free upon guest destruction
+    internal_mmu*               mmu;
 } typedef internal_guest;
 
 // Functions assume guest_list_lock to be locked.
@@ -52,24 +53,28 @@ int             insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g);
 int             remove_vcpu(internal_vcpu* vcpu, internal_guest* g);
 void            for_every_vcpu(internal_guest* g, void(*callback)(internal_vcpu*, void*), void* arg);
 
-// Memory region functions
-internal_memory_region*     map_guest_addr_to_memory_region(uint64_t phys_guest, internal_guest* g);
-int                         insert_new_memory_region(internal_memory_region* memory_region, internal_guest* g);
-int                         remove_memory_region(internal_memory_region* memory_region, internal_guest* g);
-void                        for_every_memory_region(internal_guest* g, void(*callback)(internal_memory_region*, void*), void* arg);
-
 // An abstraction for all functions provided by an hypervisor implementation.
 struct internal_mah_ops {
-    int     (*run_vcpu)(internal_vcpu*, internal_guest*);
+    // Managing guests/VCPUs
+    int         (*run_vcpu)(internal_vcpu*, internal_guest*);
+    void*       (*create_arch_internal_vcpu)(internal_guest*);
+    int         (*destroy_arch_internal_vcpu)(internal_vcpu*);
+    void*       (*create_arch_internal_guest) (internal_guest*);
+    void        (*destroy_arch_internal_guest)(internal_guest*);
 
-    void*   (*create_arch_internal_vcpu)(internal_guest*);
-    int     (*destroy_arch_internal_vcpu)(internal_vcpu*);
-    void*   (*create_arch_internal_guest) (void);
-    void    (*destroy_arch_internal_guest)(internal_guest*);
+    // Managing guest/VPU state
+    void        (*set_vcpu_registers)(internal_vcpu*, user_arg_registers*);
+    void        (*get_vcpu_registers)(internal_vcpu*, user_arg_registers*);
+    void        (*set_memory_region) (internal_guest*, internal_memory_region*);
 
-    void    (*set_vcpu_registers)(internal_vcpu*, user_arg_registers*);
-    void    (*get_vcpu_registers)(internal_vcpu*, user_arg_registers*);
-    void    (*set_memory_region) (internal_guest*, internal_memory_region*);
+    // MMU-related functions
+    uint64_t    (*map_page_attributes_to_arch) (uint64_t);      // map arch-independent flags to architecture flags
+    uint64_t    (*map_arch_to_page_attributes) (uint64_t);      // map architecture flags to arch-independent flags
+    void        (*init_mmu) (internal_mmu*);
+    void        (*destroy_mmu) (internal_mmu*);
+    int         (*mmu_walk_available) (hpa_t*, gpa_t, unsigned int*);
+    hpa_t*      (*mmu_walk_next) (hpa_t*, gpa_t, unsigned int*);
+    hpa_t*      (*mmu_walk_init) (internal_mmu*, gpa_t, unsigned int*);
 } typedef internal_mah_ops;
 
 extern internal_mah_ops mah_ops;

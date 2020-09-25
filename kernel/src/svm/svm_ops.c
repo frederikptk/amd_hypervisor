@@ -2,21 +2,20 @@
 #include <svm/svm_ops.h>
 #include <guest.h>
 #include <memory.h>
-#include <debug.h>
+#include <stddef.h>
 #include <mah.h>
 
 #include <linux/slab.h>
 
-void* svm_create_arch_internal_guest(void) {
+void* svm_create_arch_internal_guest(internal_guest* g) {
 	svm_internal_guest* svm_g;
 	unsigned int i;
 
 	svm_g = (svm_internal_guest*) kzalloc(sizeof(internal_guest), GFP_KERNEL);
 	TEST_PTR(svm_g, svm_internal_guest*,,NULL)
 	
-	// Allocate a Page Global Directory as root for the nested pagetables.
-	svm_g->nested_pagetables = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	TEST_PTR((uint64_t)svm_g->nested_pagetables, uint64_t, kfree(svm_g), NULL)
+	// Get the root for the nested pagetables from the MMU.
+	svm_g->nested_pagetables = g->mmu->base;
 
 	// SVM offers the possibility to intercept MSR instructions via a 
 	// SVM MSR permissions map (MSR). Each MSR is covered by two bits,
@@ -104,9 +103,6 @@ void svm_destroy_arch_internal_guest(internal_guest* g) {
 	// If we are here, we can assume that all locks are set.
 	if (svm_g->msr_permission_map != NULL) kfree(svm_g->msr_permission_map);
 	if (svm_g->io_permission_map != NULL)  kfree(svm_g->io_permission_map);
-
-	// Clear all nested pagetables
-	free_nested_pages(svm_g->nested_pagetables, g);
 }
 
 void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
@@ -229,6 +225,72 @@ void svm_set_memory_region(internal_guest* g, internal_memory_region* memory_reg
 	// TODO
 }
 
+uint64_t svm_map_page_attributes_to_arch(uint64_t attrib) {
+	uint64_t 	ret;
+
+	if ((attrib & ~PAGE_ATTRIB_WRITE) != 0) 		ret |= _PAGE_RW;
+	if ((attrib & ~PAGE_ATTRIB_EXEC) == 0) 		ret |= _PAGE_NX;
+	if ((attrib & ~PAGE_ATTRIB_PRESENT) != 0) 	ret |= _PAGE_PRESENT;
+	if ((attrib & ~PAGE_ATTRIB_DIRTY) != 0) 		ret |= _PAGE_DIRTY;
+	if ((attrib & ~PAGE_ATTRIB_ACCESSED) != 0) 	ret |= _PAGE_ACCESSED;
+	if ((attrib & ~PAGE_ATTRIB_HUGE) != 0) 		ret |= _PAGE_SPECIAL;
+	
+	// For AMD SVM, a nested page always has to be a user page
+	ret |= _PAGE_USER;
+
+	return ret;
+}
+
+uint64_t svm_map_arch_to_page_attributes(uint64_t attrib) {
+	uint64_t 	ret = 0;
+
+	// On x86, a page is always readable
+	ret |= PAGE_ATTRIB_READ;
+	
+	if ((attrib & ~_PAGE_RW) != 0) 		ret |= PAGE_ATTRIB_WRITE;
+	if ((attrib & ~_PAGE_NX) == 0) 		ret |= PAGE_ATTRIB_EXEC;
+	if ((attrib & ~_PAGE_PRESENT) != 0) 	ret |= PAGE_ATTRIB_PRESENT;
+	if ((attrib & ~_PAGE_DIRTY) != 0) 	ret |= PAGE_ATTRIB_DIRTY;
+	if ((attrib & ~_PAGE_ACCESSED) != 0) 	ret |= PAGE_ATTRIB_ACCESSED;
+	if ((attrib & ~_PAGE_USER) != 0) 		ret |= PAGE_ATTRIB_USER;
+	if ((attrib & ~_PAGE_SPECIAL) != 0)	ret |= PAGE_ATTRIB_HUGE;
+
+	return ret;
+}
+
+void svm_init_mmu(internal_mmu* m) {
+	m->levels = 4;
+	m->base = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	INIT_LIST_HEAD(&m->pagetables_list);
+	INIT_LIST_HEAD(&m->memory_region_list);
+}
+
+void svm_destroy_mmu(internal_mmu* m) {
+	if (m->base) kfree(m->base);
+}
+
+// The following functions implement 4-level nested pages (4KB pages) for SVM
+uint64_t svm_get_vpn_from_level(uint64_t virt_addr, unsigned int level) {
+    return (virt_addr >> ((level-1)*9 + 12)) & (uint64_t)0x1ff;
+}
+
+int svm_mmu_walk_available(hpa_t *pte, gpa_t phys_guest, unsigned int *current_level) {
+	if ((*pte & PAGE_TABLE_MASK) == 0) return ERROR;
+	else return SUCCESS;
+}
+
+hpa_t* svm_mmu_walk_next(hpa_t *pte, gpa_t phys_guest, unsigned int *current_level) {
+	uint64_t	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
+	*current_level  = *current_level - 1;
+	return (hpa_t*)__va((((hpa_t*)(*pte))[vpn]) & PAGE_TABLE_MASK);
+}
+
+hpa_t* svm_mmu_walk_init(internal_mmu *m, gpa_t phys_guest, unsigned int *current_level) {
+	uint64_t	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
+	*current_level  = m->levels;
+	return &(m->base[vpn]);
+}
+
 // This function will be called if AMD SVM support is detected
 void init_svm_mah_ops(void) {
 	mah_ops.run_vcpu 					= svm_run_vcpu;
@@ -239,6 +301,13 @@ void init_svm_mah_ops(void) {
 	mah_ops.set_vcpu_registers 			= svm_set_vcpu_registers;
     mah_ops.get_vcpu_registers 			= svm_get_vcpu_registers;
     mah_ops.set_memory_region 			= svm_set_memory_region;
+	mah_ops.map_page_attributes_to_arch	= svm_map_page_attributes_to_arch;
+	mah_ops.map_arch_to_page_attributes	= svm_map_arch_to_page_attributes;
+	mah_ops.init_mmu					= svm_init_mmu;
+	mah_ops.destroy_mmu					= svm_destroy_mmu;
+	mah_ops.mmu_walk_available			= svm_mmu_walk_available;
+	mah_ops.mmu_walk_next				= svm_mmu_walk_next;
+	mah_ops.mmu_walk_init				= svm_mmu_walk_init;
 
 	mah_initialized = 1;
 }

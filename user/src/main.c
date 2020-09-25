@@ -52,13 +52,15 @@ int main() {
 	
 	// Donate the page to the guest
 	printf("Donate memory\n");
-	guest_page = mmap(NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_ANONYMOUS, -1, 0);
-	if (guest_page == NULL) {
+	guest_page = mmap(NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (guest_page == MAP_FAILED) {
 		printf("Could not allocate guest page\n");
 		return EXIT_FAILURE;
 	}
+	printf("mmap done: 0x%lx\n", (unsigned long)guest_page);
 	memset(guest_page, 0xf4, getpagesize());
 	memcpy(guest_page, example_code, 14);
+	printf("memset done\n");
 	region.guest_id 		= guest_id;
 	region.userspace_addr	= (uint64_t)guest_page;
 	region.guest_addr		= 0;
@@ -77,12 +79,11 @@ int main() {
 	// Run the VCPU
 	printf("Run vcpu\n");
 	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_VCPU_RUN, &id_data))
-	
+
 	// Test the result
 	printf("Get registers\n");
 	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_GET_REGISTERS, &regs))
-	printf("Result rip: 0x%lx\n\n", regs.rip);
-	
+	printf("Result rip: 0x%lx\n", regs.rip);
 	printf("Result rax: 0x%lx\n", regs.rax);
 	printf("Result rbx: 0x%lx\n", regs.rbx);
 	printf("Result rcx: 0x%lx\n", regs.rcx);

@@ -1,7 +1,7 @@
 #include <memory.h>
 #include <guest.h>
 #include <mah_defs.h>
-#include <debug.h>
+#include <stddef.h>
 
 #include <linux/slab.h>
 #include <asm/pgtable.h>
@@ -10,6 +10,7 @@
 #include <linux/sched.h>
 #include <linux/mmap_lock.h>
 
+/*
 uint64_t get_vpn_from_level(uint64_t virt_addr, unsigned int level) {
     return (virt_addr >> (level*9 + 12)) & (uint64_t)0x1ff;
 }
@@ -21,18 +22,32 @@ int map_to_recursive(uint64_t phys_guest, uint64_t phys_host, unsigned int curre
 	TEST_PTR(base, uint64_t*,, ERROR)
 	
 	if (current_level == wanted_level) {
-		if (wanted_level == 0) base[vpn] = phys_host | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER;
-		else base[vpn] = phys_host | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER | _PAGE_SPECIAL;
+		if (wanted_level == 0) base[vpn] = phys_host | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+																						   PAGE_ATTRIB_WRITE | 
+																						   PAGE_ATTRIB_EXEC | 
+																						   PAGE_ATTRIB_PRESENT);
+
+		else base[vpn] = phys_host | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+																		 PAGE_ATTRIB_WRITE | 
+																		 PAGE_ATTRIB_EXEC | 
+																		 PAGE_ATTRIB_PRESENT | 
+																		 PAGE_ATTRIB_HUGE);
+
 		return SUCCESS;
 	} else {
 		next_base = (uint64_t*)(__va(base[vpn] & PAGE_TABLE_MASK));
 		
+		// TODO: insert into list
+
 		// If a page directory is NULL, create a new one.
 		if ((base[vpn] & PAGE_TABLE_MASK) == 0) {
 			next_base = kzalloc(PAGE_SIZE, GFP_KERNEL);
-			kfifo_in(&k->pagetables_fifo, &next_base, sizeof(uint64_t));
 
-			base[vpn] = __pa(next_base) | _PAGE_PRESENT | _PAGE_RW | _PAGE_USER;
+			base[vpn] = __pa(next_base) | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+																			  PAGE_ATTRIB_WRITE | 
+																			  PAGE_ATTRIB_EXEC | 
+																			  PAGE_ATTRIB_PRESENT);
+
 			if (next_base == NULL) {
 				return ERROR;
 			}
@@ -52,8 +67,9 @@ int map_to(uint64_t* base, unsigned long phys_guest, unsigned long phys_host, si
 	
 	return SUCCESS;
 }
+*/
 
-int map_user_memory(uint64_t* base, uint64_t phys_guest, uint64_t virt_user, internal_memory_region* region, internal_guest* g) {
+int map_user_memory(uint64_t *base, uint64_t phys_guest, uint64_t virt_user, internal_memory_region *region, internal_guest *g) {
 	struct 			vm_area_struct *vma;
 	int 			err;
 	unsigned int 	idx;
@@ -73,10 +89,11 @@ int map_user_memory(uint64_t* base, uint64_t phys_guest, uint64_t virt_user, int
 		goto ret;
 	}
 
+	// TODO: error handling
+
 	err = pin_user_pages(virt_user, 1, FOLL_LONGTERM | FOLL_WRITE | FOLL_FORCE, region->pages + idx, NULL);
 
-	// TODO: get physical address of user page
-	err = map_to(base, phys_guest, NULL, PAGE_SIZE, g);
+	err = map_nested_pages_to(base, phys_guest, page_to_pfn(region->pages[idx]) << 12, g);
 
 ret:
 	mmap_read_unlock(current->mm);
@@ -84,18 +101,17 @@ ret:
 	return err;
 }
 
-int handle_pagefault(uint64_t* base, uint64_t phys_guest, internal_guest* g) {
-	unsigned int i;
-	internal_memory_region* region;
+int handle_pagefault(uint64_t *base, uint64_t phys_guest, internal_guest *g) {
+	internal_memory_region 	*region;
 
 	// First, map the guest address which is responsible for the fault to a memory region.
-	region = map_guest_addr_to_memory_region(phys_guest, g);
+	region = mmu_map_guest_addr_to_memory_region(phys_guest, g);
 	
 	if (region == NULL) goto err;
 
 	// It the region is not a MMIO region, simply do lazy faulting and "swap in" the page.
 	if (!region->is_mmio) {
-		return map_user_memory(phys_guest, g->memory_regions[i]->guest_addr + g->memory_regions[i]->size - phys_guest, region, g);
+		return map_user_memory(base, phys_guest, region->guest_addr + region->size - phys_guest, region, g);
 	}
 
 	// Else: TODO: MMIO handling
@@ -107,33 +123,119 @@ err:
 	return ERROR;
 }
 
-int unmap_user_memory(internal_memory_region* region, internal_guest* g) {
-	int 			err;
+void unmap_user_memory(internal_memory_region *region) {
+	int				i;
 
 	mmap_read_lock(current->mm);
 
 	for (i = 0; i < (region->size / PAGE_SIZE); i++) {
 		if (region->pages[i] != NULL)
-			unpin_user_pages(virt_user, 1, FOLL_LONGTERM | FOLL_WRITE | FOLL_FORCE, &((region->pages)[i]), NULL);
+			unpin_user_pages(&((region->pages)[i]), 1);
 
 	}
 	mmap_read_unlock(current->mm);
-
-	return err;
 }
 
-int free_nested_pages(uint64_t* base, internal_guest* g) {
-	int				ret;
-	uint64_t		pagetable;
+void mmu_add_memory_region(internal_mmu *m, internal_memory_region *region) {
+    internal_memory_region *r;
+    r = kmalloc(sizeof(pagetable), GFP_KERNEL);
+    list_add_tail(&r->list_node, &m->memory_region_list);
+}
 
-	// First, unmap the nested pagetables
-	while (kfifo_avail(&k->pagetables_fifo)) {
-		ret = kfifo_out(&k->pagetables_fifo, &pagetable, sizeof(uint64_t));
-		
-		if (ret != sizeof(uint64_t)) return ERROR;
-		if (pagetable != NULL) kfree(pagetable);
+void mmu_destroy_all_memory_regions(internal_mmu *m) {
+    internal_memory_region *r, *tmp_r;
+
+    list_for_each_entry_safe(r, tmp_r, &m->memory_region_list, list_node) {
+        if (r != NULL) {
+			if (r->pages != NULL) kfree(r->pages);
+            list_del(&r->list_node);
+            kfree(r);
+        }
+    }
+}
+
+internal_memory_region* mmu_map_guest_addr_to_memory_region(gpa_t phys_guest, internal_guest *g) {
+	internal_memory_region *r;
+
+	list_for_each_entry(r, &g->mmu->memory_region_list, list_node) {
+		if (r->guest_addr >= phys_guest && (r->guest_addr + r->size) < phys_guest) {
+			return r;
+		}
 	}
 
-	// Next, unpin all pinned pages
-	for_every_memory_region(g, unmap_user_memory, g);
+	return NULL;
+}
+
+void mmu_add_pagetable(internal_mmu* m, void* pagetable_ptr) {
+    pagetable *p;
+    p = kmalloc(sizeof(pagetable), GFP_KERNEL);
+    list_add_tail(&p->list_node, &m->pagetables_list);
+}
+
+void mmu_destroy_all_pagetables(internal_mmu* m) {
+    pagetable *p, *tmp_p;
+
+    list_for_each_entry_safe(p, tmp_p, &m->pagetables_list, list_node) {
+        if (p != NULL) {
+			if (p->pagetable != NULL) kfree(p->pagetable);
+            list_del(&p->list_node);
+            kfree(p);
+        }
+    }
+}
+
+int map_nested_pages_to(hpa_t *base, gpa_t phys_guest, hpa_t phys_host, internal_guest *g) {
+    unsigned int    level;
+    hpa_t          	*current_pte;
+	hpa_t			*next_base;
+
+    for_each_mmu_level(current_pte, g->mmu, phys_guest, level) {
+        if (level == 1) {
+             *current_pte = phys_host | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+																			PAGE_ATTRIB_WRITE | 
+																			PAGE_ATTRIB_EXEC | 
+																			PAGE_ATTRIB_PRESENT);
+			break;
+        }
+
+        if (mah_ops.mmu_walk_available(current_pte, phys_guest, &level) == ERROR) {
+            next_base = kzalloc(PAGE_SIZE, GFP_KERNEL);
+            *current_pte = __pa(next_base) | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+                                                                                  PAGE_ATTRIB_WRITE | 
+                                                                                  PAGE_ATTRIB_EXEC | 
+                                                                                  PAGE_ATTRIB_PRESENT);
+            if (next_base == NULL) {
+				return ERROR;
+			}
+        }
+    }
+
+    return SUCCESS;
+}
+
+int set_pagetable_attributes(gpa_t phys_guest, uint64_t attributes, internal_guest *g) {
+	unsigned int    level;
+    hpa_t	        *current_pte;
+
+    for_each_mmu_level(current_pte, g->mmu, phys_guest, level) {
+        if (level == 1) {
+            *current_pte = (*current_pte & PAGE_TABLE_MASK) | mah_ops.map_page_attributes_to_arch(attributes);
+			break;
+        }
+    }
+
+    return SUCCESS;
+}
+
+int get_pagetable_attributes(gpa_t phys_guest, internal_guest* g) {
+	unsigned int    level;
+    hpa_t          	*current_pte;
+
+    for_each_mmu_level(current_pte, g->mmu, phys_guest, level) {
+        if (level == 1) {
+            return mah_ops.map_arch_to_page_attributes(*current_pte);
+        }
+    }
+
+    return SUCCESS;
 }

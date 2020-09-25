@@ -1,7 +1,7 @@
 #include <svm/svm.h>
 #include <svm/svm_ops.h>
 #include <ioctl.h>
-#include <debug.h>
+#include <stddef.h>
 
 #include <linux/init.h>
 #include <linux/module.h>
@@ -14,7 +14,8 @@ static int __init mah_init(void) {
 	printk(DBG "Loaded MAH kernel module\n");
 
     // Detect on which platform MAH is running on.
-    if (svm_check_support()) init_svm_mah_ops();
+    //if (svm_check_support()) // TODO: remove comment
+        init_svm_mah_ops();
 
     // If we are on no supported platform, unload the module
     if (mah_initialized == 0) {

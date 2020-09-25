@@ -1,7 +1,7 @@
 #include <svm/svm.h>
 #include <svm/svm_ops.h>
 #include <ioctl.h>
-#include <debug.h>
+#include <stddef.h>
 #include <memory.h>
 #include <mah.h>
 
