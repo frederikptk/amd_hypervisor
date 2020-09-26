@@ -76,3 +76,10 @@ In order to build MAH, clone the repository and execute:
  - Event injection
  - CPU reset: enter realmode instead of protected mode, move code to userland
  - Add automated tests
+ - Copy-on-write
+ - Guest test OS
+
+## DONE
+ - Lazy faulting
+ - MMU abtraction
+ - Arch-dependence abstraction

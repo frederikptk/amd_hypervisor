@@ -85,6 +85,7 @@ struct __attribute__ ((__packed__)) user_memory_region {
     uint64_t            guest_addr;
 	uint64_t			size;
     int                 is_mmio;
+	int                 is_cow;
 } typedef user_memory_region;
 
 #define ERROR				-1

@@ -66,7 +66,6 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	internal_vcpu				*vcpu;
 	internal_vcpu				*current_vcpu;
 	internal_memory_region		*current_memory_region;
-	internal_mmu				*mmu;
 
 	user_arg_registers 			regs;
 	user_memory_region			memory_region;
@@ -195,8 +194,6 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			break;
 
 		case MAH_SET_MEMORY_REGION:
-			// TODO: allocate pages array
-
 			if (copy_from_user((void*)&memory_region, (void __user *)argp, sizeof(user_memory_region))) {
 				return -EFAULT;
 			}
@@ -211,7 +208,10 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			current_memory_region->guest_addr 		= memory_region.guest_addr;
 			current_memory_region->size 			= memory_region.size;
 			current_memory_region->is_mmio			= memory_region.is_mmio;
+			current_memory_region->is_cow			= memory_region.is_cow;
+			// TODO: kzalloc or memset to 0
 			current_memory_region->pages 			= kmalloc_array((int)(memory_region.size / PAGE_SIZE) + 1, sizeof(struct page *), GFP_KERNEL);
+			current_memory_region->modified_pages	= kmalloc_array((int)(memory_region.size / PAGE_SIZE) + 1, sizeof(void*), GFP_KERNEL);
 
 			// First check if there already is a memory region which would overlap with the new one
 			mmu_add_memory_region(g->mmu, current_memory_region);

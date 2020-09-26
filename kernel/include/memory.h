@@ -14,9 +14,10 @@ struct internal_memory_region {
     hva_t               userspace_addr;
     gpa_t               guest_addr;
     uint64_t            size;
-    int                 is_present;
     int                 is_mmio;
+    int                 is_cow;
     struct page         **pages;
+    void**              modified_pages;
     struct list_head    list_node;
 } typedef internal_memory_region;
 
@@ -25,11 +26,6 @@ struct internal_memory_region {
 #define PAGEFAULT_READ          ((uint64_t)1 << 2)
 #define PAGEFAULT_EXEC          ((uint64_t)1 << 3)
 #define PAGEFAULT_UNKNOWN       ((uint64_t)1 << 4)
-
-int map_to(hpa_t* base, gpa_t phys_guest, hpa_t phys_host, size_t sz, internal_guest* g);
-int map_user_memory(hpa_t* base, gpa_t phys_guest, hva_t virt_user, internal_memory_region* region, internal_guest* g); // Called by hypervisor pagefault handler.
-int handle_pagefault(hpa_t* base, gpa_t phys_guest, uint64_t reason, internal_guest* g);
-int free_nested_pages(hpa_t* base, internal_guest* g);
 
 #define PAGE_ATTRIB_READ        ((uint64_t)1 << 0)
 #define PAGE_ATTRIB_WRITE       ((uint64_t)1 << 1)
@@ -56,9 +52,13 @@ struct internal_mmu {
 
 void mmu_add_memory_region(internal_mmu* m, internal_memory_region* region);
 void mmu_destroy_all_memory_regions(internal_mmu* m);
-internal_memory_region* mmu_map_guest_addr_to_memory_region(gpa_t phys_guest, internal_guest *g);
+internal_memory_region* mmu_map_guest_addr_to_memory_region(internal_mmu* m, gpa_t phys_guest);
 void mmu_add_pagetable(internal_mmu* m, void* pagetable_ptr);
 void mmu_destroy_all_pagetables(internal_mmu* m);
-int  map_nested_pages_to(hpa_t* base, gpa_t phys_guest, hpa_t phys_host, internal_guest* g);
-int  set_pagetable_attributes(gpa_t phys_guest, uint64_t attributes, internal_guest* g);
-int  get_pagetable_attributes(gpa_t phys_guest, internal_guest* g);
+int  map_nested_pages_to(internal_mmu* m, hpa_t* base, gpa_t phys_guest, hpa_t phys_host);
+int  set_pagetable_attributes(internal_mmu* m, gpa_t phys_guest, uint64_t attributes);
+int  get_pagetable_attributes(internal_mmu* m, gpa_t phys_guest);
+int  map_to(hpa_t* base, gpa_t phys_guest, hpa_t phys_host, size_t sz, internal_guest* g);
+int  map_user_memory(internal_mmu* m, hpa_t* base, gpa_t phys_guest, hva_t virt_user, internal_memory_region* region); // Called by hypervisor pagefault handler.
+int  handle_pagefault(hpa_t* base, gpa_t phys_guest, uint64_t reason, internal_guest* g);
+int  free_nested_pages(hpa_t* base, internal_guest* g);

@@ -288,10 +288,13 @@ int svm_mmu_walk_available(hpa_t *pte, gpa_t phys_guest, unsigned int *current_l
 }
 
 hpa_t* svm_mmu_walk_next(hpa_t *pte, gpa_t phys_guest, unsigned int *current_level) {
+	uint64_t	vpn;
+	hpa_t*		next_base;
+
 	*current_level  = *current_level - 1;
 
-	uint64_t	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
-	hpa_t*		next_base = (hpa_t*)__va(*pte & PAGE_TABLE_MASK);
+	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
+	next_base = (hpa_t*)__va(*pte & PAGE_TABLE_MASK);
 
 	printk(DBG "svm_mmu_walk_next\n");
 	printk(DBG "next_base: 0x%lx\n", (unsigned long)next_base);
@@ -300,8 +303,8 @@ hpa_t* svm_mmu_walk_next(hpa_t *pte, gpa_t phys_guest, unsigned int *current_lev
 }
 
 hpa_t* svm_mmu_walk_init(internal_mmu *m, gpa_t phys_guest, unsigned int *current_level) {
-	printk(DBG "svm_mmu_walk_init\n");
 	uint64_t	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
+	printk(DBG "svm_mmu_walk_init\n");
 	*current_level  = m->levels;
 	return &(m->base[vpn]);
 }

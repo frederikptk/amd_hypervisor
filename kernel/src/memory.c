@@ -8,8 +8,13 @@
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/mmap_lock.h>
+#include <linux/highmem.h>
 
-int map_user_memory(uint64_t *base, uint64_t phys_guest, uint64_t virt_user, internal_memory_region *region, internal_guest *g) {
+unsigned int mmu_get_index_of_page_in_memory_region(gpa_t phys_guest, internal_memory_region *region) {
+	return (unsigned int)(phys_guest - region->guest_addr) / PAGE_SIZE;
+}
+
+int map_user_memory(internal_mmu* m, uint64_t *base, gpa_t phys_guest, uint64_t virt_user, internal_memory_region *region) {
 	struct 			vm_area_struct *vma;
 	int 			err;
 	unsigned int 	idx;
@@ -25,7 +30,7 @@ int map_user_memory(uint64_t *base, uint64_t phys_guest, uint64_t virt_user, int
 		goto ret;
 	}
 
-	idx = (unsigned int)(virt_user - region->userspace_addr) / PAGE_SIZE;
+	idx = mmu_get_index_of_page_in_memory_region(phys_guest, region);
 
 	if (idx > region->size / PAGE_SIZE) {
 		printk(DBG "idx out of range: 0x%lx\n", (unsigned long)idx);
@@ -38,41 +43,12 @@ int map_user_memory(uint64_t *base, uint64_t phys_guest, uint64_t virt_user, int
 	printk(DBG "pinning user page: 0x%lx\n", (unsigned long)virt_user);
 	err = pin_user_pages(virt_user, 1, FOLL_LONGTERM | FOLL_WRITE | FOLL_FORCE, region->pages + idx, NULL);
 
-	err = map_nested_pages_to(base, phys_guest, page_to_pfn(region->pages[idx]) << 12, g);
+	err = map_nested_pages_to(m, base, phys_guest, page_to_pfn(region->pages[idx]) << 12);
 
 ret:
 	mmap_read_unlock(current->mm);
 
 	return err;
-}
-
-int handle_pagefault(uint64_t *base, uint64_t phys_guest, uint64_t reason, internal_guest *g) {
-	internal_memory_region 	*region;
-
-	printk(DBG "handle_pagefault, reason: 0x%lx\n", reason);
-
-	// First, map the guest address which is responsible for the fault to a memory region.
-	region = mmu_map_guest_addr_to_memory_region(phys_guest, g);
-
-	printk(DBG "Found memory region: 0x%lx\n", (unsigned long)region);
-	
-	if (region == NULL) goto err;
-
-	// It the region is not a MMIO region, simply do lazy faulting and "swap in" the page.
-	if (!region->is_mmio) {
-		printk(DBG "no MMIO\n");
-		if (reason & PAGEFAULT_NON_PRESENT)
-			map_user_memory(base, phys_guest, region->userspace_addr + (region->guest_addr - phys_guest), region, g);
-	}
-
-	// Else: TODO: MMIO handling
-	if (region->is_mmio) {
-		printk(DBG "MMIO\n");
-		return SUCCESS;
-	}
-
-err:
-	return ERROR;
 }
 
 void unmap_user_memory(internal_memory_region *region) {
@@ -88,6 +64,95 @@ void unmap_user_memory(internal_memory_region *region) {
 	mmap_read_unlock(current->mm);
 }
 
+void mmu_prepare_page_for_cow(internal_mmu* m, gpa_t phys_guest, internal_memory_region *region) {
+	// Mark the old nested pagetable entry as read-only
+	set_pagetable_attributes(m, phys_guest, PAGE_ATTRIB_READ | PAGE_ATTRIB_EXEC | PAGE_ATTRIB_PRESENT);
+}
+
+void mmu_do_page_cow(internal_mmu *m, gpa_t phys_guest, internal_memory_region *region) {
+	unsigned int 	idx;
+	void*			page_map;
+	unsigned int    level;
+    hpa_t	        *current_pte;
+
+	// Copy the contents of the old read-only page to the new writable page
+	idx = mmu_get_index_of_page_in_memory_region(phys_guest, region);
+
+	region->modified_pages[idx] = kmalloc(PAGE_SIZE, GFP_KERNEL);
+
+	page_map = kmap(region->pages[idx]);
+
+	memcpy(region->modified_pages[idx], page_map, PAGE_SIZE);
+
+	kunmap(region->pages[idx]);
+
+	// Now let the pagetable entry point to the new writable page
+	for_each_mmu_level(current_pte, m, phys_guest, level) {
+        if (level == 1) {
+            *current_pte = __pa(region->modified_pages[idx]) | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+                                                                                  				   PAGE_ATTRIB_WRITE | 
+                                                                                  				   PAGE_ATTRIB_EXEC | 
+                                                                                  				   PAGE_ATTRIB_PRESENT);
+			break;
+        }
+    }
+}
+
+void mmu_rollback_cow_pages(internal_mmu *m, internal_memory_region *region) {
+	unsigned int 	i;
+	gpa_t 			phys_guest;
+
+	for (i = 0; i < (region->size / PAGE_SIZE); i++) {
+		phys_guest = region->guest_addr + i * PAGE_SIZE;
+
+		if (region->modified_pages[i] != NULL) {
+			map_nested_pages_to(m, m->base, phys_guest, page_to_pfn(region->pages[i]) << 12);
+			kfree(region->modified_pages[i]);
+			region->modified_pages[i] = NULL;
+		}
+
+	}
+}
+
+int handle_pagefault(uint64_t *base, uint64_t phys_guest, uint64_t reason, internal_guest *g) {
+	internal_memory_region 	*region;
+
+	printk(DBG "handle_pagefault, reason: 0x%llx\n", reason);
+
+	// First, map the guest address which is responsible for the fault to a memory region.
+	region = mmu_map_guest_addr_to_memory_region(g->mmu, phys_guest);
+
+	printk(DBG "Found memory region: 0x%lx\n", (unsigned long)region);
+	
+	if (region == NULL) goto err;
+
+	// It the region is not a MMIO region, simply do lazy faulting and "swap in" the page.
+	if (!region->is_mmio) {
+		printk(DBG "no MMIO\n");
+		if (!region->is_cow) {
+			if (reason & PAGEFAULT_NON_PRESENT) {
+				map_user_memory(g->mmu, base, phys_guest, region->userspace_addr + (phys_guest - region->guest_addr), region);
+			}
+			// Directly check afterwards, if we also pagefaulted on a CoW page
+			if ((reason & PAGEFAULT_WRITE) && region->is_cow) {
+				mmu_do_page_cow(g->mmu, phys_guest, region);
+			}
+
+		} else {
+			
+		}
+	}
+
+	// Else: TODO: MMIO handling
+	if (region->is_mmio) {
+		printk(DBG "MMIO\n");
+		return SUCCESS;
+	}
+
+err:
+	return ERROR;
+}
+
 void mmu_add_memory_region(internal_mmu *m, internal_memory_region *region) {
     list_add_tail(&region->list_node, &m->memory_region_list);
 
@@ -101,17 +166,20 @@ void mmu_destroy_all_memory_regions(internal_mmu *m) {
         if (r != NULL) {
 			printk(DBG "Removing memory region: 0x%lx\n", (unsigned long)r);
 
+			unmap_user_memory(r);
+			mmu_rollback_cow_pages(m, r);
 			if (r->pages != NULL) kfree(r->pages);
+			if (r->modified_pages != NULL) kfree(r->modified_pages);
             list_del(&r->list_node);
             kfree(r);
         }
     }
 }
 
-internal_memory_region* mmu_map_guest_addr_to_memory_region(gpa_t phys_guest, internal_guest *g) {
+internal_memory_region* mmu_map_guest_addr_to_memory_region(internal_mmu *m, gpa_t phys_guest) {
 	internal_memory_region *r;
 
-	list_for_each_entry(r, &g->mmu->memory_region_list, list_node) {
+	list_for_each_entry(r, &m->memory_region_list, list_node) {
 		//printk(DBG "\tLooking @ memory region: 0x%lx, @ guest addr: 0x%lx\n", (unsigned long)r, (unsigned long)r->guest_addr);
 		if (r->guest_addr <= phys_guest && (r->guest_addr + r->size) > phys_guest) {
 			return r;
@@ -124,6 +192,7 @@ internal_memory_region* mmu_map_guest_addr_to_memory_region(gpa_t phys_guest, in
 void mmu_add_pagetable(internal_mmu* m, void* pagetable_ptr) {
     pagetable *p;
     p = kmalloc(sizeof(pagetable), GFP_KERNEL);
+	p->pagetable = pagetable_ptr;
     list_add_tail(&p->list_node, &m->pagetables_list);
 
 	printk(DBG "Adding pagetable: 0x%lx\n", (unsigned long)pagetable_ptr);
@@ -143,14 +212,14 @@ void mmu_destroy_all_pagetables(internal_mmu* m) {
     }
 }
 
-int map_nested_pages_to(hpa_t *base, gpa_t phys_guest, hpa_t phys_host, internal_guest *g) {
+int map_nested_pages_to(internal_mmu* m, hpa_t *base, gpa_t phys_guest, hpa_t phys_host) {
     unsigned int    level;
     hpa_t          	*current_pte;
 	hpa_t			*next_base;
 
 	printk(DBG "map_nested_pages_to\n");
 
-    for_each_mmu_level(current_pte, g->mmu, phys_guest, level) {
+    for_each_mmu_level(current_pte, m, phys_guest, level) {
 		printk(DBG "current_pte va: 0x%lx\n", (unsigned long)*current_pte);
 		printk(DBG "current_pte pa: 0x%lx\n", (unsigned long)__pa(*current_pte));
 		printk(DBG "level: 0x%lx\n", (unsigned long)level);
@@ -165,7 +234,7 @@ int map_nested_pages_to(hpa_t *base, gpa_t phys_guest, hpa_t phys_host, internal
 
         if (mah_ops.mmu_walk_available(current_pte, phys_guest, &level) == ERROR) {
             next_base = kzalloc(PAGE_SIZE, GFP_KERNEL);
-			mmu_add_pagetable(g->mmu, next_base);
+			mmu_add_pagetable(m, next_base);
 			printk(DBG "next_base: 0x%lx\n", (unsigned long)next_base);
             *current_pte = __pa(next_base) | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
                                                                                   PAGE_ATTRIB_WRITE | 
@@ -181,11 +250,11 @@ int map_nested_pages_to(hpa_t *base, gpa_t phys_guest, hpa_t phys_host, internal
     return SUCCESS;
 }
 
-int set_pagetable_attributes(gpa_t phys_guest, uint64_t attributes, internal_guest *g) {
+int set_pagetable_attributes(internal_mmu* m, gpa_t phys_guest, uint64_t attributes) {
 	unsigned int    level;
     hpa_t	        *current_pte;
 
-    for_each_mmu_level(current_pte, g->mmu, phys_guest, level) {
+    for_each_mmu_level(current_pte, m, phys_guest, level) {
         if (level == 1) {
             *current_pte = (*current_pte & PAGE_TABLE_MASK) | mah_ops.map_page_attributes_to_arch(attributes);
 			break;
@@ -195,11 +264,11 @@ int set_pagetable_attributes(gpa_t phys_guest, uint64_t attributes, internal_gue
     return SUCCESS;
 }
 
-int get_pagetable_attributes(gpa_t phys_guest, internal_guest* g) {
+int get_pagetable_attributes(internal_mmu* m, gpa_t phys_guest) {
 	unsigned int    level;
     hpa_t          	*current_pte;
 
-    for_each_mmu_level(current_pte, g->mmu, phys_guest, level) {
+    for_each_mmu_level(current_pte, m, phys_guest, level) {
         if (level == 1) {
             return mah_ops.map_arch_to_page_attributes(*current_pte);
         }
