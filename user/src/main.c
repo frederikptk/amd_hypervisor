@@ -43,11 +43,10 @@ int main() {
 	printf("Create guest\n");
 	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_CREATE_GUEST, &guest_id))
 	
-	// Create a VCPU for the guest
+	// Create 2 VCPUs for the guest
 	printf("Create vcpu\n");
-	vcpu_id = guest_id;
-	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_CREATE_VCPU, &vcpu_id))
-
+	id_data.guest_id = guest_id;
+	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_CREATE_VCPU, &id_data))
 	printf("Guest ID: 0x%lx, VCPU ID: 0x%lx\n", guest_id, vcpu_id);
 	
 	// Donate the page to the guest
@@ -78,10 +77,15 @@ int main() {
 	
 	// Run the VCPU
 	printf("Run vcpu\n");
+	id_data.guest_id = guest_id;
+	id_data.vcpu_id  = vcpu_id;
+	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_VCPU_RUN, &id_data))
 	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_VCPU_RUN, &id_data))
 
 	// Test the result
 	printf("Get registers\n");
+	regs.guest_id = guest_id;
+	regs.vcpu_id  = vcpu_id;
 	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_GET_REGISTERS, &regs))
 	printf("Result rip: 0x%lx\n", regs.rip);
 	printf("Result rax: 0x%lx\n", regs.rax);
@@ -101,7 +105,7 @@ int main() {
 	
 	// Destroy a guest
 	printf("Destroy guest\n");
-	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_DESTROY_GUEST))
+	TEST_IOCTL_RET(ioctl(ctl_fd, MAH_IOCTL_DESTROY_GUEST, &guest_id))
 	
 	close(ctl_fd);
 	

@@ -80,23 +80,36 @@ u64 msr_rdmsr(u32 msr) {
 	return a | ((u64) d << 32);
 }
 
+uint64_t map_to_pagefault_reason(uint64_t npf_exitinfo) {
+	uint64_t					pagefault_reason = 0;
+
+	if ((npf_exitinfo & NPF_NOT_PRESENT) == 0) pagefault_reason 	|= PAGEFAULT_NON_PRESENT;
+	if (npf_exitinfo & NPF_WRITE_ACCESS) pagefault_reason 	|= PAGEFAULT_WRITE;
+	if (npf_exitinfo & NPF_CODE_ACCESS) pagefault_reason 	|= PAGEFAULT_EXEC;
+	if ((npf_exitinfo & NPF_CODE_ACCESS) == 0 
+		&& (npf_exitinfo & NPF_WRITE_ACCESS) == 0
+		&& (npf_exitinfo & NPF_RESERVED) == 0) pagefault_reason 	|= PAGEFAULT_READ;
+
+	return pagefault_reason;
+}
+
 void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
 	svm_internal_vcpu 			*svm_vcpu;
 
 	svm_vcpu = to_svm_vcpu(vcpu);
 
+	printk(DBG "#VMEXIT exitcode: 0x%lx, exitinfo1: 0x%lx, exitinfo2: 0x%lx\n", (unsigned long)svm_vcpu->vcpu_vmcb->exitcode, (unsigned long)svm_vcpu->vcpu_vmcb->exitinfo1, (unsigned long)svm_vcpu->vcpu_vmcb->exitinfo2);
+
 	switch (svm_vcpu->vcpu_vmcb->exitcode) {
 		case VMEXIT_NPF:
-			// TODO: also pass guest
 			// Only handle pagefaults in the nested pagetables
-			if ((svm_vcpu->vcpu_vmcb->exitinfo2 & NPF_IN_VMM_PAGE) != 0)
-				handle_pagefault(__va(svm_vcpu->vcpu_vmcb->n_cr3), svm_vcpu->vcpu_vmcb->exitinfo1, g);
+			if ((svm_vcpu->vcpu_vmcb->exitinfo1 & NPF_IN_VMM_PAGE) != 0) {
+				handle_pagefault(__va(svm_vcpu->vcpu_vmcb->n_cr3), svm_vcpu->vcpu_vmcb->exitinfo2, map_to_pagefault_reason(svm_vcpu->vcpu_vmcb->exitinfo1), g);
+			}
 			break;
 		default:
 			printk(DBG "Unknown exit code: 0x%llx, exitinfo1: 0x%llx, exitinfo2: 0x%llx\n", svm_vcpu->vcpu_vmcb->exitcode, svm_vcpu->vcpu_vmcb->exitinfo1, svm_vcpu->vcpu_vmcb->exitinfo2);
 	}
-	
-	printk(DBG "handle_vmexit\n");
 }
 
 void svm_run_vcpu_internal(void *info) {

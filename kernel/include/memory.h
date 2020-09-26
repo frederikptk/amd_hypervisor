@@ -20,21 +20,27 @@ struct internal_memory_region {
     struct list_head    list_node;
 } typedef internal_memory_region;
 
+#define PAGEFAULT_NON_PRESENT   ((uint64_t)1 << 0)
+#define PAGEFAULT_WRITE         ((uint64_t)1 << 1)
+#define PAGEFAULT_READ          ((uint64_t)1 << 2)
+#define PAGEFAULT_EXEC          ((uint64_t)1 << 3)
+#define PAGEFAULT_UNKNOWN       ((uint64_t)1 << 4)
+
 int map_to(hpa_t* base, gpa_t phys_guest, hpa_t phys_host, size_t sz, internal_guest* g);
 int map_user_memory(hpa_t* base, gpa_t phys_guest, hva_t virt_user, internal_memory_region* region, internal_guest* g); // Called by hypervisor pagefault handler.
-int handle_pagefault(hpa_t* base, gpa_t phys_guest, internal_guest* g);
+int handle_pagefault(hpa_t* base, gpa_t phys_guest, uint64_t reason, internal_guest* g);
 int free_nested_pages(hpa_t* base, internal_guest* g);
 
-#define PAGE_ATTRIB_READ        1 << 0 
-#define PAGE_ATTRIB_WRITE       1 << 1
-#define PAGE_ATTRIB_EXEC        1 << 2
-#define PAGE_ATTRIB_PRESENT     1 << 3
-#define PAGE_ATTRIB_DIRTY       1 << 4
-#define PAGE_ATTRIB_ACCESSED    1 << 5
-#define PAGE_ATTRIB_USER        1 << 6
-#define PAGE_ATTRIB_HUGE        1 << 7
+#define PAGE_ATTRIB_READ        ((uint64_t)1 << 0)
+#define PAGE_ATTRIB_WRITE       ((uint64_t)1 << 1)
+#define PAGE_ATTRIB_EXEC        ((uint64_t)1 << 2)
+#define PAGE_ATTRIB_PRESENT     ((uint64_t)1 << 3)
+#define PAGE_ATTRIB_DIRTY       ((uint64_t)1 << 4)
+#define PAGE_ATTRIB_ACCESSED    ((uint64_t)1 << 5)
+#define PAGE_ATTRIB_USER        ((uint64_t)1 << 6)
+#define PAGE_ATTRIB_HUGE        ((uint64_t)1 << 7)
 
-#define for_each_mmu_level(x,mmu,phys_guest,i) for(x = mah_ops.mmu_walk_init(mmu, phys_guest, &i); i > 0; x = mah_ops.mmu_walk_next(mmu->base, phys_guest, &i))
+#define for_each_mmu_level(x,mmu,phys_guest,i) for(x = mah_ops.mmu_walk_init(mmu, phys_guest, &i); i > 0; x = mah_ops.mmu_walk_next(x, phys_guest, &i))
 
 struct pagetable {
     void*               pagetable;

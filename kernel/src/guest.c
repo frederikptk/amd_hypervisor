@@ -79,6 +79,7 @@ int insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g) {
         if (g->vcpus[i] == NULL) {
             vcpu->id = g->id + i;
             g->vcpus[i] = vcpu;
+            printk(DBG "Inserting VCPU: 0x%lx\n", (unsigned long)vcpu);
             return SUCCESS;
         }
     }
@@ -91,6 +92,7 @@ int remove_vcpu(internal_vcpu* vcpu, internal_guest* g) {
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {
         if (g->vcpus[i] == vcpu) {
+            printk(DBG "Removing VCPU: 0x%lx\n", (unsigned long)vcpu);
             g->vcpus[i] = NULL;
             return SUCCESS;
         }

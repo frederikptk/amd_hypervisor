@@ -27,7 +27,7 @@ void* svm_create_arch_internal_guest(internal_guest* g) {
 	// 0x1000   - 0x17FFF:       0xC0010000 - 0xC0011FFF
 	// 0x1800   - 0x1FFFF:       Reserved
 	svm_g->msr_permission_map = (uint8_t*) kzalloc(MSRPM_SIZE, GFP_KERNEL);
-	TEST_PTR(svm_g->msr_permission_map, uint8_t*, kfree(svm_g); kfree(svm_g->nested_pagetables), NULL)
+	TEST_PTR(svm_g->msr_permission_map, uint8_t*, kfree(svm_g), NULL)
 
 	for(i = 0; i < MSRPM_SIZE; i++) svm_g->msr_permission_map[i] = 0;
 
@@ -50,6 +50,21 @@ void* svm_create_arch_internal_guest(internal_guest* g) {
 	svm_set_msrpm_permission(svm_g->msr_permission_map, MSR_IA32_LASTINTTOIP, 1, 1);*/
 
 	return (void*)svm_g;
+}
+
+void svm_destroy_arch_internal_guest(internal_guest* g) {
+	svm_internal_guest* svm_g;
+
+	TEST_PTR(g, internal_guest*,,)
+	svm_g = to_svm_guest(g);
+
+	if (svm_g != NULL) {
+		// If we are here, we can assume that all locks are set.
+		if (svm_g->msr_permission_map != NULL) kfree(svm_g->msr_permission_map);
+		if (svm_g->io_permission_map != NULL)  kfree(svm_g->io_permission_map);
+
+		kfree(svm_g);
+	}
 }
 
 void* svm_create_arch_internal_vcpu(internal_guest* g) {
@@ -93,20 +108,10 @@ int svm_destroy_arch_internal_vcpu(internal_vcpu* vcpu) {
 	return ERROR;
 }
 
-void svm_destroy_arch_internal_guest(internal_guest* g) {
-	svm_internal_guest* svm_g;
-
-	TEST_PTR(g, internal_guest*,,)
-	svm_g = to_svm_guest(g);
-	TEST_PTR(svm_g, svm_internal_guest*,,)
-
-	// If we are here, we can assume that all locks are set.
-	if (svm_g->msr_permission_map != NULL) kfree(svm_g->msr_permission_map);
-	if (svm_g->io_permission_map != NULL)  kfree(svm_g->io_permission_map);
-}
-
 void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
 	svm_internal_vcpu* svm_vcpu;
+
+	printk(DBG "Setting registers of VCPU: 0x%lx\n", (unsigned long)vcpu);
 	
 	TEST_PTR(vcpu, internal_vcpu*,,);
 	TEST_PTR(regs, user_arg_registers*,,);
@@ -166,6 +171,8 @@ void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
 void svm_get_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
 	svm_internal_vcpu* svm_vcpu;
 	
+	printk(DBG "Getting registers of VCPU: 0x%lx\n", (unsigned long)vcpu);
+
 	TEST_PTR(vcpu, internal_vcpu*,,);
 	TEST_PTR(regs, user_arg_registers*,,);
 
@@ -226,12 +233,12 @@ void svm_set_memory_region(internal_guest* g, internal_memory_region* memory_reg
 }
 
 uint64_t svm_map_page_attributes_to_arch(uint64_t attrib) {
-	uint64_t 	ret;
+	uint64_t 	ret = 0;
 
-	if ((attrib & ~PAGE_ATTRIB_WRITE) != 0) 		ret |= _PAGE_RW;
+	if ((attrib & ~PAGE_ATTRIB_WRITE) != 0) 	ret |= _PAGE_RW;
 	if ((attrib & ~PAGE_ATTRIB_EXEC) == 0) 		ret |= _PAGE_NX;
 	if ((attrib & ~PAGE_ATTRIB_PRESENT) != 0) 	ret |= _PAGE_PRESENT;
-	if ((attrib & ~PAGE_ATTRIB_DIRTY) != 0) 		ret |= _PAGE_DIRTY;
+	if ((attrib & ~PAGE_ATTRIB_DIRTY) != 0) 	ret |= _PAGE_DIRTY;
 	if ((attrib & ~PAGE_ATTRIB_ACCESSED) != 0) 	ret |= _PAGE_ACCESSED;
 	if ((attrib & ~PAGE_ATTRIB_HUGE) != 0) 		ret |= _PAGE_SPECIAL;
 	
@@ -247,13 +254,13 @@ uint64_t svm_map_arch_to_page_attributes(uint64_t attrib) {
 	// On x86, a page is always readable
 	ret |= PAGE_ATTRIB_READ;
 	
-	if ((attrib & ~_PAGE_RW) != 0) 		ret |= PAGE_ATTRIB_WRITE;
-	if ((attrib & ~_PAGE_NX) == 0) 		ret |= PAGE_ATTRIB_EXEC;
+	if ((attrib & ~_PAGE_RW) != 0) 			ret |= PAGE_ATTRIB_WRITE;
+	if ((attrib & ~_PAGE_NX) == 0) 			ret |= PAGE_ATTRIB_EXEC;
 	if ((attrib & ~_PAGE_PRESENT) != 0) 	ret |= PAGE_ATTRIB_PRESENT;
-	if ((attrib & ~_PAGE_DIRTY) != 0) 	ret |= PAGE_ATTRIB_DIRTY;
-	if ((attrib & ~_PAGE_ACCESSED) != 0) 	ret |= PAGE_ATTRIB_ACCESSED;
+	if ((attrib & ~_PAGE_DIRTY) != 0) 		ret |= PAGE_ATTRIB_DIRTY;
+	if ((attrib & ~_PAGE_ACCESSED) != 0)	ret |= PAGE_ATTRIB_ACCESSED;
 	if ((attrib & ~_PAGE_USER) != 0) 		ret |= PAGE_ATTRIB_USER;
-	if ((attrib & ~_PAGE_SPECIAL) != 0)	ret |= PAGE_ATTRIB_HUGE;
+	if ((attrib & ~_PAGE_SPECIAL) != 0)		ret |= PAGE_ATTRIB_HUGE;
 
 	return ret;
 }
@@ -275,17 +282,25 @@ uint64_t svm_get_vpn_from_level(uint64_t virt_addr, unsigned int level) {
 }
 
 int svm_mmu_walk_available(hpa_t *pte, gpa_t phys_guest, unsigned int *current_level) {
+	printk(DBG "svm_mmu_walk_available\n");
 	if ((*pte & PAGE_TABLE_MASK) == 0) return ERROR;
 	else return SUCCESS;
 }
 
 hpa_t* svm_mmu_walk_next(hpa_t *pte, gpa_t phys_guest, unsigned int *current_level) {
-	uint64_t	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
 	*current_level  = *current_level - 1;
-	return (hpa_t*)__va((((hpa_t*)(*pte))[vpn]) & PAGE_TABLE_MASK);
+
+	uint64_t	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
+	hpa_t*		next_base = (hpa_t*)__va(*pte & PAGE_TABLE_MASK);
+
+	printk(DBG "svm_mmu_walk_next\n");
+	printk(DBG "next_base: 0x%lx\n", (unsigned long)next_base);
+
+	return (hpa_t*)&next_base[vpn];
 }
 
 hpa_t* svm_mmu_walk_init(internal_mmu *m, gpa_t phys_guest, unsigned int *current_level) {
+	printk(DBG "svm_mmu_walk_init\n");
 	uint64_t	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
 	*current_level  = m->levels;
 	return &(m->base[vpn]);
