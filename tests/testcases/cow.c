@@ -11,15 +11,15 @@
 #include <string.h>
 
 /*
- Contains the following code:
-	add eax, 0x4
-	mov ebx, 0x3
-	mov ecx, ebx
-	sub ecx, 0x1
-	hlt
+Assembly:
+mov eax, [0x1000]
+mov ebx, 1
+mov [0x1000], ebx
+mov ecx, [0x1000]
 */
 
-char* example_code = "\x83\xc0\x04\xbb\x03\x00\x00\x00\x89\xd9\x83\xe9\x01\xf4";
+#define TEST_CODE_SIZE	22
+char* test_code = "\xa1\x00\x10\x00\x00\xbb\x01\x00\x00\x00\x89\x1d\x00\x10\x00\x00\x8b\x0d\x00\x10\x00\x00";
 
 #define TEST_IOCTL_RET(x) if (x) return EXIT_FAILURE;
 
@@ -31,80 +31,47 @@ int main() {
 	uint64_t				guest_id, vcpu_id;
 	user_memory_region		region;
 	
-	printf("Running example...\n");
-	
 	ctl_fd = open(HYPERKRAKEN_PROC_PATH, O_RDWR);
 	if (ctl_fd == -1) {
 		printf("Could not open " HYPERKRAKEN_PROC_PATH "\n");
 		return EXIT_FAILURE;
 	}
 	
-	// Create a guest
-	printf("Create guest\n");
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_CREATE_GUEST, &guest_id))
-	
-	// Create 2 VCPUs for the guest
-	printf("Create vcpu\n");
 	id_data.guest_id = guest_id;
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_CREATE_VCPU, &id_data))
-	printf("Guest ID: 0x%lx, VCPU ID: 0x%lx\n", guest_id, vcpu_id);
-	
-	// Donate the page to the guest
-	printf("Donate memory\n");
-	guest_page = mmap(NULL, getpagesize(), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+	guest_page = mmap(NULL, 0x2000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (guest_page == MAP_FAILED) {
 		printf("Could not allocate guest page\n");
 		return EXIT_FAILURE;
 	}
-	printf("mmap done: 0x%lx\n", (unsigned long)guest_page);
-	memset(guest_page, 0xf4, getpagesize());
-	memcpy(guest_page, example_code, 14);
-	printf("memset done\n");
+	memset(guest_page, 0xf4, 0x2000);
+	memcpy(guest_page, test_code, TEST_CODE_SIZE);
 	region.guest_id 		= guest_id;
 	region.userspace_addr	= (uint64_t)guest_page;
 	region.guest_addr		= 0;
-	region.size				= 0x1000;
+	region.size				= 0x2000;
 	region.is_mmio			= 0;
+	region.is_cow			= 1;
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_SET_MEMORY_REGION, &region))
-
-	// Get the registers and set EBX and ECX
-	printf("Set registers\n");
-	regs.guest_id = guest_id;
-	regs.vcpu_id  = vcpu_id;
-	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_GET_REGISTERS, &regs))
 	
-	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_SET_REGISTERS, &regs))
-	
-	// Run the VCPU
-	printf("Run vcpu\n");
 	id_data.guest_id = guest_id;
 	id_data.vcpu_id  = vcpu_id;
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_VCPU_RUN, &id_data))
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_VCPU_RUN, &id_data))
+	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_VCPU_RUN, &id_data))
 
 	// Test the result
-	printf("Get registers\n");
 	regs.guest_id = guest_id;
 	regs.vcpu_id  = vcpu_id;
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_GET_REGISTERS, &regs))
-	printf("Result rip: 0x%lx\n", regs.rip);
 	printf("Result rax: 0x%lx\n", regs.rax);
 	printf("Result rbx: 0x%lx\n", regs.rbx);
 	printf("Result rcx: 0x%lx\n", regs.rcx);
-	printf("Result rdx: 0x%lx\n", regs.rdx);
-	printf("Result rdi: 0x%lx\n", regs.rdi);
-	printf("Result rsi: 0x%lx\n", regs.rsi);
-	printf("Result r9:  0x%lx\n", regs.r8);
-	printf("Result r9:  0x%lx\n", regs.r9);
-	printf("Result r10: 0x%lx\n", regs.r10);
-	printf("Result r11: 0x%lx\n", regs.r11);
-	printf("Result r12: 0x%lx\n", regs.r12);
-	printf("Result r13: 0x%lx\n", regs.r13);
-	printf("Result r14: 0x%lx\n", regs.r14);
-	printf("Result r15: 0x%lx\n", regs.r15);
+    printf("Result [0x1000]: 0x%lx\n", *(unsigned long*)((unsigned long)guest_page + 0x1000));
+
 	
-	// Destroy a guest
-	printf("Destroy guest\n");
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_DESTROY_GUEST, &guest_id))
 	
 	close(ctl_fd);

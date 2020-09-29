@@ -226,3 +226,17 @@ struct __attribute__ ((__packed__)) gp_regs {
 #define NPF_CODE_ACCESS			((uint64_t)1 << 4)
 #define NPF_IN_VMM_PAGE			((uint64_t)1 << 32)
 #define NPF_IN_GUEST_PAGE		((uint64_t)1 << 33)
+
+// TLB flushing
+#define TLB_FLUSH_NONE			((uint8_t)0)
+#define TLB_FLUSH_ALL			((uint8_t)0x1)
+#define TLB_FLUSH_THIS			((uint8_t)0x3)
+#define TLB_FLUSH_NON_GLOBAL	((uint8_t)0x7)
+
+// Event injection
+#define EVENT_INJECT_ERROR_VALID		((uint64_t)1 << 11)
+#define EVENT_INJECT_VALID				((uint64_t)1 << 31)
+#define EVENT_INJECT_TYPE_INTR			((uint64_t)0)
+#define EVENT_INJECT_TYPE_NMI			((uint64_t)2)
+#define EVENT_INJECT_TYPE_EXCEPTION		((uint64_t)3)
+#define EVENT_INJECT_TYPE_INTN			((uint64_t)4)

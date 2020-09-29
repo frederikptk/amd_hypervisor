@@ -2,7 +2,7 @@
 
 #include <linux/types.h>
 
-#define DBG	KERN_INFO "[MAH]: "
+#define DBG	KERN_INFO "[HYPERKRAKEN]: "
 
 #define TEST_PTR(a, b, c, d) if (a == (b) NULL) { c; return d; }
 

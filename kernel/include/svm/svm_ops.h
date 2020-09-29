@@ -2,7 +2,7 @@
 
 #include <memory.h>
 #include <guest.h>
-#include <mah_defs.h>
+#include <hyperkraken_defs.h>
 
 #include <stddef.h>
 #include <linux/list.h>
@@ -15,4 +15,4 @@ void 	svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs);
 void 	svm_get_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs);
 void 	svm_set_memory_region(internal_guest* g, internal_memory_region* memory_region);
 
-void	init_svm_mah_ops(void);
+void	init_svm_hyperkraken_ops(void);

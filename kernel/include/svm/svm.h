@@ -2,7 +2,7 @@
 
 #include <svm/vmcb.h>
 #include <guest.h>
-#include <mah_defs.h>
+#include <hyperkraken_defs.h>
 
 struct svm_internal_vcpu {
 	vmcb*			vcpu_vmcb;

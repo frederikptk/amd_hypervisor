@@ -1,6 +1,6 @@
 #include <memory.h>
 #include <guest.h>
-#include <mah_defs.h>
+#include <hyperkraken_defs.h>
 #include <stddef.h>
 
 #include <linux/slab.h>
@@ -9,12 +9,13 @@
 #include <linux/sched.h>
 #include <linux/mmap_lock.h>
 #include <linux/highmem.h>
+#include <linux/io.h>
 
 unsigned int mmu_get_index_of_page_in_memory_region(gpa_t phys_guest, internal_memory_region *region) {
 	return (unsigned int)(phys_guest - region->guest_addr) / PAGE_SIZE;
 }
 
-int map_user_memory(internal_mmu* m, uint64_t *base, gpa_t phys_guest, uint64_t virt_user, internal_memory_region *region) {
+int map_user_memory(internal_mmu* m, hpa_t *base, gpa_t phys_guest, hva_t virt_user, internal_memory_region *region) {
 	struct 			vm_area_struct *vma;
 	int 			err;
 	unsigned int 	idx;
@@ -26,7 +27,7 @@ int map_user_memory(internal_mmu* m, uint64_t *base, gpa_t phys_guest, uint64_t 
 	vma = find_vma(current->mm, virt_user);
 	if (!vma) {
 		printk(DBG "vma not found!\n");
-		err = ERROR;
+		err = -EFAULT;
 		goto ret;
 	}
 
@@ -34,7 +35,7 @@ int map_user_memory(internal_mmu* m, uint64_t *base, gpa_t phys_guest, uint64_t 
 
 	if (idx > region->size / PAGE_SIZE) {
 		printk(DBG "idx out of range: 0x%lx\n", (unsigned long)idx);
-		err = ERROR;
+		err = -EFAULT;
 		goto ret;
 	}
 
@@ -75,6 +76,8 @@ void mmu_do_page_cow(internal_mmu *m, gpa_t phys_guest, internal_memory_region *
 	unsigned int    level;
     hpa_t	        *current_pte;
 
+	printk(DBG "mmu_do_page_cow\n");
+
 	// Copy the contents of the old read-only page to the new writable page
 	idx = mmu_get_index_of_page_in_memory_region(phys_guest, region);
 
@@ -89,7 +92,7 @@ void mmu_do_page_cow(internal_mmu *m, gpa_t phys_guest, internal_memory_region *
 	// Now let the pagetable entry point to the new writable page
 	for_each_mmu_level(current_pte, m, phys_guest, level) {
         if (level == 1) {
-            *current_pte = __pa(region->modified_pages[idx]) | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+            *current_pte = __pa(region->modified_pages[idx]) | hyperkraken_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
                                                                                   				   PAGE_ATTRIB_WRITE | 
                                                                                   				   PAGE_ATTRIB_EXEC | 
                                                                                   				   PAGE_ATTRIB_PRESENT);
@@ -114,7 +117,7 @@ void mmu_rollback_cow_pages(internal_mmu *m, internal_memory_region *region) {
 	}
 }
 
-int handle_pagefault(uint64_t *base, uint64_t phys_guest, uint64_t reason, internal_guest *g) {
+int handle_pagefault(hpa_t *base, gpa_t phys_guest, uint64_t reason, internal_guest *g) {
 	internal_memory_region 	*region;
 
 	printk(DBG "handle_pagefault, reason: 0x%llx\n", reason);
@@ -129,7 +132,7 @@ int handle_pagefault(uint64_t *base, uint64_t phys_guest, uint64_t reason, inter
 	// It the region is not a MMIO region, simply do lazy faulting and "swap in" the page.
 	if (!region->is_mmio) {
 		printk(DBG "no MMIO\n");
-		if (!region->is_cow) {
+		if (region->is_cow) {
 			if (reason & PAGEFAULT_NON_PRESENT) {
 				map_user_memory(g->mmu, base, phys_guest, region->userspace_addr + (phys_guest - region->guest_addr), region);
 			}
@@ -146,11 +149,11 @@ int handle_pagefault(uint64_t *base, uint64_t phys_guest, uint64_t reason, inter
 	// Else: TODO: MMIO handling
 	if (region->is_mmio) {
 		printk(DBG "MMIO\n");
-		return SUCCESS;
+		return 0;
 	}
 
 err:
-	return ERROR;
+	return -EFAULT;
 }
 
 void mmu_add_memory_region(internal_mmu *m, internal_memory_region *region) {
@@ -225,29 +228,29 @@ int map_nested_pages_to(internal_mmu* m, hpa_t *base, gpa_t phys_guest, hpa_t ph
 		printk(DBG "level: 0x%lx\n", (unsigned long)level);
 
         if (level == 1) {
-             *current_pte = phys_host | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+             *current_pte = phys_host | hyperkraken_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
 																			PAGE_ATTRIB_WRITE | 
 																			PAGE_ATTRIB_EXEC | 
 																			PAGE_ATTRIB_PRESENT);
-			break;
+			return 0;
         }
 
-        if (mah_ops.mmu_walk_available(current_pte, phys_guest, &level) == ERROR) {
+        if (hyperkraken_ops.mmu_walk_available(current_pte, phys_guest, &level)) {
             next_base = kzalloc(PAGE_SIZE, GFP_KERNEL);
 			mmu_add_pagetable(m, next_base);
 			printk(DBG "next_base: 0x%lx\n", (unsigned long)next_base);
-            *current_pte = __pa(next_base) | mah_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
+            *current_pte = __pa(next_base) | hyperkraken_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
                                                                                   PAGE_ATTRIB_WRITE | 
                                                                                   PAGE_ATTRIB_EXEC | 
                                                                                   PAGE_ATTRIB_PRESENT);
 			printk(DBG "*current_pte: 0x%lx\n", (unsigned long)*current_pte);
             if (next_base == NULL) {
-				return ERROR;
+				return -EFAULT;
 			}
         }
     }
 
-    return SUCCESS;
+    return -EFAULT;
 }
 
 int set_pagetable_attributes(internal_mmu* m, gpa_t phys_guest, uint64_t attributes) {
@@ -256,12 +259,12 @@ int set_pagetable_attributes(internal_mmu* m, gpa_t phys_guest, uint64_t attribu
 
     for_each_mmu_level(current_pte, m, phys_guest, level) {
         if (level == 1) {
-            *current_pte = (*current_pte & PAGE_TABLE_MASK) | mah_ops.map_page_attributes_to_arch(attributes);
-			break;
+            *current_pte = (*current_pte & PAGE_TABLE_MASK) | hyperkraken_ops.map_page_attributes_to_arch(attributes);
+			return 0;
         }
     }
 
-    return SUCCESS;
+    return -EFAULT;
 }
 
 int get_pagetable_attributes(internal_mmu* m, gpa_t phys_guest) {
@@ -270,9 +273,47 @@ int get_pagetable_attributes(internal_mmu* m, gpa_t phys_guest) {
 
     for_each_mmu_level(current_pte, m, phys_guest, level) {
         if (level == 1) {
-            return mah_ops.map_arch_to_page_attributes(*current_pte);
+            return hyperkraken_ops.map_arch_to_page_attributes(*current_pte);
         }
     }
 
-    return SUCCESS;
+    return -EFAULT;
+}
+
+int  write_memory(internal_mmu* m, gpa_t phys_guest, void* src, size_t sz) {
+	unsigned int    level;
+    hpa_t          	*current_pte;
+	void*			page_ptr;
+
+	if (sz > PAGE_SIZE) return -EINVAL;
+
+	for_each_mmu_level(current_pte, m, phys_guest, level) {
+        if (level == 1) {
+			page_ptr = memremap((resource_size_t)(*current_pte & PAGE_TABLE_MASK), PAGE_SIZE, 0);
+			memcpy(page_ptr, src, sz);
+			memunmap(page_ptr);
+            return 0;
+        }
+    }
+
+	return -EFAULT;
+}
+
+int  read_memory(internal_mmu* m, gpa_t phys_guest, void* dst, size_t sz) {
+	unsigned int    level;
+    hpa_t          	*current_pte;
+	void*			page_ptr;
+
+	if (sz > PAGE_SIZE) return -EINVAL;
+
+	for_each_mmu_level(current_pte, m, phys_guest, level) {
+        if (level == 1) {
+			page_ptr = memremap((resource_size_t)(*current_pte & PAGE_TABLE_MASK), PAGE_SIZE, 0);
+			memcpy(dst, page_ptr, sz);
+			memunmap(page_ptr);
+            return 0;
+        }
+    }
+
+	return -EFAULT;
 }

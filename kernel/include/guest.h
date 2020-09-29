@@ -1,11 +1,13 @@
 #pragma once
 
 #include <memory.h>
-#include <mah_defs.h>
+#include <hyperkraken_defs.h>
 #include <stddef.h>
 
+#include <linux/rwsem.h>
 #include <linux/spinlock.h>
 #include <linux/kfifo.h>
+#include <linux/hashtable.h>
 
 typedef struct internal_guest internal_guest;
 typedef struct internal_vcpu internal_vcpu;
@@ -16,27 +18,47 @@ typedef struct internal_mmu internal_mmu;
 #define MAX_NUM_VCPUS           16
 #define MAX_NUM_MEM_REGIONS     128
 
-extern internal_guest*                 guests[MAX_NUM_GUESTS];
+extern internal_guest*          g_guests[MAX_NUM_GUESTS];
 
 struct internal_guest {
     uint64_t                    id;
     void*                       arch_internal_guest; // will be casted to a arch-dependent guest type
     internal_memory_region*	    memory_regions[MAX_NUM_MEM_REGIONS];
     internal_vcpu*              vcpus[MAX_NUM_VCPUS];
-    rwlock_t                    vcpu_lock;
+    struct rw_semaphore         vcpu_lock;
     internal_mmu*               mmu;
+    DECLARE_HASHTABLE           (breakpoints, 7); // uses virtual breakpoint addresses as keys
 } typedef internal_guest;
 
 // Functions assume guest_list_lock to be locked.
+void            destroy_guest(internal_guest *g);
+internal_guest* create_guest(void);
 internal_guest* map_guest_id_to_guest(uint64_t id);
 int             insert_new_guest(internal_guest* g);
 int             remove_guest(internal_guest* g);
 
-// Locking the list of all guests
-void guest_list_lock_read(void);
-void guest_list_unlock_read(void);
-void guest_list_lock_write(void);
-void guest_list_unlock_write(void);
+void guest_list_lock(void);
+void guest_list_unlock(void);
+void guest_vcpu_read_lock(internal_guest* g);
+void guest_vcpu_read_unlock(internal_guest* g);
+void guest_vcpu_write_lock(internal_guest* g);
+void guest_vcpu_write_unlock(internal_guest* g);
+
+struct internal_breakpoint {
+    // Breakpoints can be set on either guest virtual of phyiscal addresses.
+    // In case only the physical address is set, the virtual one will be
+    // calculated the first time the breakpoint is hit.
+    gva_t                       guest_addr_v;
+    gpa_t                       guest_addr_p;
+    uint64_t                    old_mem;
+    struct hlist_node           hlist;
+} typedef internal_breakpoint;
+
+internal_breakpoint* find_breakpoint_by_gpa(internal_guest *g, gpa_t guest_addr);
+internal_breakpoint* find_breakpoint_by_gva(internal_guest *g, gva_t guest_addr);
+void insert_breakpoint(internal_guest *g, internal_breakpoint* bp);
+void remove_breakpoint(internal_guest *g, internal_breakpoint* bp);
+void destroy_all_breakpoints(internal_guest *g); // will be called upon guest destruction
 
 enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED, VCPU_STATE_DESTROYED} typedef vcpu_state;
 
@@ -54,7 +76,7 @@ int             remove_vcpu(internal_vcpu* vcpu, internal_guest* g);
 void            for_every_vcpu(internal_guest* g, void(*callback)(internal_vcpu*, void*), void* arg);
 
 // An abstraction for all functions provided by an hypervisor implementation.
-struct internal_mah_ops {
+struct internal_hyperkraken_ops {
     // Managing guests/VCPUs
     int         (*run_vcpu)(internal_vcpu*, internal_guest*);
     void*       (*create_arch_internal_vcpu)(internal_guest*);
@@ -62,7 +84,7 @@ struct internal_mah_ops {
     void*       (*create_arch_internal_guest) (internal_guest*);
     void        (*destroy_arch_internal_guest)(internal_guest*);
 
-    // Managing guest/VPU state
+    // Managing guest/VCPU state
     void        (*set_vcpu_registers)(internal_vcpu*, user_arg_registers*);
     void        (*get_vcpu_registers)(internal_vcpu*, user_arg_registers*);
     void        (*set_memory_region) (internal_guest*, internal_memory_region*);
@@ -75,6 +97,13 @@ struct internal_mah_ops {
     int         (*mmu_walk_available) (hpa_t*, gpa_t, unsigned int*);
     hpa_t*      (*mmu_walk_next) (hpa_t*, gpa_t, unsigned int*);
     hpa_t*      (*mmu_walk_init) (internal_mmu*, gpa_t, unsigned int*);
-} typedef internal_mah_ops;
+    gpa_t       (*mmu_gva_to_gpa) (internal_guest*, internal_vcpu*, gva_t);
 
-extern internal_mah_ops mah_ops;
+    // Breakpoints
+    int         (*add_breakpoint_p)(internal_guest*, internal_vcpu*, gpa_t);
+    int         (*add_breakpoint_v)(internal_guest*, internal_vcpu*, gva_t);
+    int         (*remove_breakpoint)(internal_guest*, internal_vcpu*, internal_breakpoint *bp);
+    int         (*singlestep)(internal_guest* g, internal_vcpu* vcpu);
+} typedef internal_hyperkraken_ops;
+
+extern internal_hyperkraken_ops hyperkraken_ops;

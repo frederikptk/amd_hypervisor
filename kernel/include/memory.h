@@ -36,7 +36,7 @@ struct internal_memory_region {
 #define PAGE_ATTRIB_USER        ((uint64_t)1 << 6)
 #define PAGE_ATTRIB_HUGE        ((uint64_t)1 << 7)
 
-#define for_each_mmu_level(x,mmu,phys_guest,i) for(x = mah_ops.mmu_walk_init(mmu, phys_guest, &i); i > 0; x = mah_ops.mmu_walk_next(x, phys_guest, &i))
+#define for_each_mmu_level(x,mmu,phys_guest,i) for(x = hyperkraken_ops.mmu_walk_init(mmu, phys_guest, &i); i > 0; x = hyperkraken_ops.mmu_walk_next(x, phys_guest, &i))
 
 struct pagetable {
     void*               pagetable;
@@ -62,3 +62,5 @@ int  map_to(hpa_t* base, gpa_t phys_guest, hpa_t phys_host, size_t sz, internal_
 int  map_user_memory(internal_mmu* m, hpa_t* base, gpa_t phys_guest, hva_t virt_user, internal_memory_region* region); // Called by hypervisor pagefault handler.
 int  handle_pagefault(hpa_t* base, gpa_t phys_guest, uint64_t reason, internal_guest* g);
 int  free_nested_pages(hpa_t* base, internal_guest* g);
+int  write_memory(internal_mmu* m, gpa_t phys_guest, void* src, size_t sz);
+int  read_memory(internal_mmu* m, gpa_t phys_guest, void* dst, size_t sz);

@@ -1,6 +1,6 @@
 #include <ioctl.h>
 #include <stddef.h>
-#include <mah_defs.h>
+#include <hyperkraken_defs.h>
 #include <guest.h>
 #include <memory.h>
 #include <svm/svm.h>
@@ -12,53 +12,7 @@
 #include <linux/vmalloc.h>
 #include <linux/mm.h>
 #include <linux/version.h>
-
-void destroy_guest(internal_guest *g) {
-	if (g != NULL) {
-		// Destroy all VCPUs first.
-		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))mah_ops.destroy_arch_internal_vcpu, NULL);
-		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))remove_vcpu, g);
-		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))kfree, NULL);
-
-		// Destroy the MMU: pagetables, memory regions, internals
-		if (g->mmu != NULL) {
-			mah_ops.destroy_mmu(g->mmu);
-			mmu_destroy_all_memory_regions(g->mmu);
-			mmu_destroy_all_pagetables(g->mmu);
-			kfree(g->mmu);
-		}
-
-		// Free all other pointers.
-		mah_ops.destroy_arch_internal_guest(g);
-		remove_guest(g);
-		kfree(g);
-	}
-}
-
-internal_guest* create_guest(void) {
-	internal_guest				*g;
-	internal_mmu				*mmu;
-
-	// Create the guest itself
-	g = (internal_guest*)kmalloc(sizeof(internal_guest), GFP_KERNEL);
-	if (g == NULL) goto err;
-
-	// Create the MMU for the guest
-	mmu = kmalloc(sizeof(internal_mmu), GFP_KERNEL);
-	if (mmu == NULL) goto err;
-	mah_ops.init_mmu(mmu);
-	g->mmu = mmu;
-
-	// Initialize the arch-dependent structure for the guest
-	g->arch_internal_guest = mah_ops.create_arch_internal_guest(g);
-	if (g->arch_internal_guest == NULL) goto err;
-
-	return g;
-
-err:
-	destroy_guest(g);
-	return NULL;
-}
+#include <linux/rwsem.h>
 
 static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long argp) {
 	uint64_t					id;
@@ -74,7 +28,7 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	printk(DBG "Got ioctl cmd: 0x%x\n", cmd);
 	
 	switch (cmd) {
-		case MAH_IOCTL_CREATE_GUEST:
+		case HYPERKRAKEN_IOCTL_CREATE_GUEST:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
 			g = create_guest();
@@ -84,10 +38,15 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 				return -ENOMEM;
 			}
 
-			if (insert_new_guest(g) == ERROR) {
+			guest_list_lock();
+
+			if (insert_new_guest(g)) {
+				guest_list_unlock();
 				destroy_guest(g);
 				return -ENOMEM;
 			}
+
+			guest_list_unlock();
 
 			// Return the guest ID to the user.
 			if (copy_to_user((void __user *)argp, (void*)&g->id, sizeof(uint64_t))) {
@@ -96,41 +55,52 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			}
 			break;
 		
-		case MAH_IOCTL_DESTROY_GUEST:
+		case HYPERKRAKEN_IOCTL_DESTROY_GUEST:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 			
 			if (copy_from_user((void*)&id, (void __user *)argp, sizeof(uint64_t))) {
 				return -EFAULT;
 			}
 
+			guest_list_lock();
+
 			g = map_guest_id_to_guest(id);
-			TEST_PTR(g, internal_guest*,, -EINVAL)
+			TEST_PTR(g, internal_guest*, guest_list_unlock(), -EINVAL)
+
+			// Aquire a write lock here in order to prevent VCPUs from running.
+			guest_vcpu_write_lock(g);
 
 			destroy_guest(g);
+
+			guest_list_unlock();
 			
 			break;
 			
-		case MAH_IOCTL_CREATE_VCPU:
+		case HYPERKRAKEN_IOCTL_CREATE_VCPU:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
 			if (copy_from_user((void*)&id_data, (void __user *)argp, sizeof(user_vcpu_guest_id))) {
 				return -EFAULT;
 			}
 
+			guest_list_lock();
 			g = map_guest_id_to_guest(id_data.guest_id);
+			guest_list_unlock();
 			TEST_PTR(g, internal_guest*,, -EINVAL)
 
+			guest_vcpu_write_lock(g);
 			vcpu = kmalloc(sizeof(internal_vcpu), GFP_KERNEL);
-			TEST_PTR(vcpu, internal_vcpu*,, -ENOMEM)
+			TEST_PTR(vcpu, internal_vcpu*, guest_vcpu_write_unlock(g), -ENOMEM)
 
 			vcpu->state = VCPU_STATE_CREATED;
 
-			vcpu->arch_internal_vcpu = mah_ops.create_arch_internal_vcpu(g);
-			TEST_PTR((void*)(vcpu->arch_internal_vcpu), void*, kfree(vcpu);, -ENOMEM)
+			vcpu->arch_internal_vcpu = hyperkraken_ops.create_arch_internal_vcpu(g);
+			TEST_PTR((void*)(vcpu->arch_internal_vcpu), void*, kfree(vcpu); guest_vcpu_write_unlock(g), -ENOMEM)
 			
-			if (insert_new_vcpu(vcpu, g) == ERROR) {
-				mah_ops.destroy_arch_internal_vcpu(vcpu);
+			if (insert_new_vcpu(vcpu, g)) {
+				hyperkraken_ops.destroy_arch_internal_vcpu(vcpu);
 				kfree(vcpu);
+				guest_vcpu_write_unlock(g);
 				return -ENOMEM;
 			}
 
@@ -138,39 +108,51 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 			// Return the VCPU ID to the user.
 			if (copy_to_user((void __user *)argp, (void*)&id_data, sizeof(user_vcpu_guest_id))) {
-				mah_ops.destroy_arch_internal_vcpu(vcpu);
+				hyperkraken_ops.destroy_arch_internal_vcpu(vcpu);
 				kfree(vcpu);
+				guest_vcpu_write_unlock(g);
 				return -ENOMEM;
 			}
+
+			guest_vcpu_write_unlock(g);
+
 			break;
 			
-		case MAH_IOCTL_SET_REGISTERS:
+		case HYPERKRAKEN_IOCTL_SET_REGISTERS:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
 			if (copy_from_user((void*)&regs, (void __user *)argp, sizeof(user_arg_registers))) {
 				return -EFAULT;
 			}
 
+			guest_list_lock();
 			g = map_guest_id_to_guest(regs.guest_id);
+			guest_list_unlock();
 			TEST_PTR(g, internal_guest*,, -EINVAL)
 			
+			guest_vcpu_read_lock(g);
 			current_vcpu = map_vcpu_id_to_vcpu(regs.vcpu_id, g);
-			mah_ops.set_vcpu_registers(current_vcpu, &regs);
+			hyperkraken_ops.set_vcpu_registers(current_vcpu, &regs);
+			guest_vcpu_read_unlock(g);
 			
 			break;
 			
-		case MAH_IOCTL_GET_REGISTERS:
+		case HYPERKRAKEN_IOCTL_GET_REGISTERS:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
 			if (copy_from_user((void*)&regs, (void __user *)argp, sizeof(user_arg_registers))) {
 				return -EFAULT;
 			}
 
+			guest_list_lock();
 			g = map_guest_id_to_guest(regs.guest_id);
+			guest_list_unlock();
 			TEST_PTR(g, internal_guest*,, -EINVAL)
 
+			guest_vcpu_read_lock(g);
 			current_vcpu = map_vcpu_id_to_vcpu(regs.vcpu_id, g);
-			mah_ops.get_vcpu_registers(current_vcpu, &regs);
+			hyperkraken_ops.get_vcpu_registers(current_vcpu, &regs);
+			guest_vcpu_read_unlock(g);
 
 			if (copy_to_user((void __user *)argp, (void*)&regs, sizeof(user_arg_registers))) {
 				return -EFAULT;
@@ -178,43 +160,49 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 
 			break;
 			
-		case MAH_IOCTL_VCPU_RUN:
+		case HYPERKRAKEN_IOCTL_VCPU_RUN:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
 			if (copy_from_user((void*)&id_data, (void __user *)argp, sizeof(user_vcpu_guest_id))) {
 				return -EFAULT;
 			}
 
+			guest_list_lock();
 			g = map_guest_id_to_guest(id_data.guest_id);
+			guest_list_unlock();
 			TEST_PTR(g, internal_guest*,, -EINVAL)
 
+			guest_vcpu_read_lock(g);
 			current_vcpu = map_vcpu_id_to_vcpu(id_data.vcpu_id, g);
-			mah_ops.run_vcpu(current_vcpu, g);
+			hyperkraken_ops.run_vcpu(current_vcpu, g);
+			guest_vcpu_read_unlock(g);
 			
 			break;
 
-		case MAH_SET_MEMORY_REGION:
+		case HYPERKRAKEN_SET_MEMORY_REGION:
 			if (copy_from_user((void*)&memory_region, (void __user *)argp, sizeof(user_memory_region))) {
 				return -EFAULT;
 			}
 
+			guest_list_lock();
 			g = map_guest_id_to_guest(memory_region.guest_id);
-			TEST_PTR(g, internal_guest*,, -EINVAL)
+			TEST_PTR(g, internal_guest*, guest_list_unlock(), -EINVAL)
 
 			current_memory_region = kzalloc(sizeof(internal_memory_region), GFP_KERNEL);
-			TEST_PTR(current_memory_region, internal_memory_region*,, -ENOMEM);
+			TEST_PTR(current_memory_region, internal_memory_region*, guest_list_unlock(), -ENOMEM);
 
 			current_memory_region->userspace_addr 	= memory_region.userspace_addr;
 			current_memory_region->guest_addr 		= memory_region.guest_addr;
 			current_memory_region->size 			= memory_region.size;
 			current_memory_region->is_mmio			= memory_region.is_mmio;
 			current_memory_region->is_cow			= memory_region.is_cow;
-			// TODO: kzalloc or memset to 0
-			current_memory_region->pages 			= kmalloc_array((int)(memory_region.size / PAGE_SIZE) + 1, sizeof(struct page *), GFP_KERNEL);
-			current_memory_region->modified_pages	= kmalloc_array((int)(memory_region.size / PAGE_SIZE) + 1, sizeof(void*), GFP_KERNEL);
+			current_memory_region->pages 			= kzalloc((int)((memory_region.size / PAGE_SIZE) + 1) * sizeof(struct page *), GFP_KERNEL);
+			current_memory_region->modified_pages	= kzalloc((int)((memory_region.size / PAGE_SIZE) + 1) * sizeof(void*), GFP_KERNEL);
 
 			// First check if there already is a memory region which would overlap with the new one
 			mmu_add_memory_region(g->mmu, current_memory_region);
+
+			guest_list_unlock();
 
 			break;
 			

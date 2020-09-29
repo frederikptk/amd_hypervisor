@@ -8,17 +8,17 @@
 
 MODULE_LICENSE("GPL");
 
-int mah_initialized = 0;
+int hyperkraken_initialized = 0;
 
-static int __init mah_init(void) {
-	printk(DBG "Loaded MAH kernel module\n");
+static int __init hyperkraken_init(void) {
+	printk(DBG "Loaded HYPERKRAKEN kernel module\n");
 
-    // Detect on which platform MAH is running on.
+    // Detect on which platform HYPERKRAKEN is running on.
     //if (svm_check_support()) // TODO: remove comment
-        init_svm_mah_ops();
+        init_svm_hyperkraken_ops();
 
     // If we are on no supported platform, unload the module
-    if (mah_initialized == 0) {
+    if (hyperkraken_initialized == 0) {
         printk(DBG "No supported platform detected!\n");
         return -1;
     }
@@ -27,10 +27,10 @@ static int __init mah_init(void) {
 	return 0;
 }
 
-static void __exit mah_exit(void) {
-	printk(DBG "Unloaded MAH kernel module\n");
+static void __exit hyperkraken_exit(void) {
+	printk(DBG "Unloaded HYPERKRAKEN kernel module\n");
 	finit_ctl_interface();
 }
 
-module_init(mah_init);
-module_exit(mah_exit);
+module_init(hyperkraken_init);
+module_exit(hyperkraken_exit);

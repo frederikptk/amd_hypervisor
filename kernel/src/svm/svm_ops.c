@@ -3,7 +3,7 @@
 #include <guest.h>
 #include <memory.h>
 #include <stddef.h>
-#include <mah.h>
+#include <hyperkraken.h>
 
 #include <linux/slab.h>
 
@@ -103,9 +103,9 @@ int svm_destroy_arch_internal_vcpu(internal_vcpu* vcpu) {
 		if (svm_vcpu->vcpu_vmcb != NULL) kfree(svm_vcpu->vcpu_vmcb);
 		if (svm_vcpu->host_vmcb != NULL) kfree(svm_vcpu->host_vmcb);
 		if (svm_vcpu->vcpu_regs != NULL) kfree(svm_vcpu->vcpu_regs);
-		return SUCCESS;
+		return 0;
 	}
-	return ERROR;
+	return -EFAULT;
 }
 
 void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
@@ -130,6 +130,7 @@ void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
 	svm_vcpu->vcpu_vmcb->cr2 = regs->cr2;
 	svm_vcpu->vcpu_vmcb->cr3 = regs->cr3;
 	svm_vcpu->vcpu_vmcb->cr4 = regs->cr4;
+	svm_vcpu->vcpu_vmcb->rflags = regs->rflags;
 	
 	svm_vcpu->vcpu_vmcb->efer   = regs->efer;
 	svm_vcpu->vcpu_vmcb->star   = regs->star;
@@ -190,6 +191,7 @@ void svm_get_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
 	regs->cr2 = svm_vcpu->vcpu_vmcb->cr2;
 	regs->cr3 = svm_vcpu->vcpu_vmcb->cr3;
 	regs->cr4 = svm_vcpu->vcpu_vmcb->cr4;
+	regs->rflags = svm_vcpu->vcpu_vmcb->rflags;
 	
 	regs->efer   = svm_vcpu->vcpu_vmcb->efer;
 	regs->star   = svm_vcpu->vcpu_vmcb->star;
@@ -283,8 +285,8 @@ uint64_t svm_get_vpn_from_level(uint64_t virt_addr, unsigned int level) {
 
 int svm_mmu_walk_available(hpa_t *pte, gpa_t phys_guest, unsigned int *current_level) {
 	printk(DBG "svm_mmu_walk_available\n");
-	if ((*pte & PAGE_TABLE_MASK) == 0) return ERROR;
-	else return SUCCESS;
+	if ((*pte & PAGE_TABLE_MASK) == 0) return -EINVAL;
+	else return 0;
 }
 
 hpa_t* svm_mmu_walk_next(hpa_t *pte, gpa_t phys_guest, unsigned int *current_level) {
@@ -309,23 +311,191 @@ hpa_t* svm_mmu_walk_init(internal_mmu *m, gpa_t phys_guest, unsigned int *curren
 	return &(m->base[vpn]);
 }
 
-// This function will be called if AMD SVM support is detected
-void init_svm_mah_ops(void) {
-	mah_ops.run_vcpu 					= svm_run_vcpu;
-    mah_ops.create_arch_internal_vcpu 	= svm_create_arch_internal_vcpu,
-	mah_ops.destroy_arch_internal_vcpu 	= svm_destroy_arch_internal_vcpu,
-    mah_ops.create_arch_internal_guest 	= svm_create_arch_internal_guest;
-    mah_ops.destroy_arch_internal_guest = svm_destroy_arch_internal_guest;
-	mah_ops.set_vcpu_registers 			= svm_set_vcpu_registers;
-    mah_ops.get_vcpu_registers 			= svm_get_vcpu_registers;
-    mah_ops.set_memory_region 			= svm_set_memory_region;
-	mah_ops.map_page_attributes_to_arch	= svm_map_page_attributes_to_arch;
-	mah_ops.map_arch_to_page_attributes	= svm_map_arch_to_page_attributes;
-	mah_ops.init_mmu					= svm_init_mmu;
-	mah_ops.destroy_mmu					= svm_destroy_mmu;
-	mah_ops.mmu_walk_available			= svm_mmu_walk_available;
-	mah_ops.mmu_walk_next				= svm_mmu_walk_next;
-	mah_ops.mmu_walk_init				= svm_mmu_walk_init;
+gpa_t svm_mmu_gva_to_gpa(internal_guest *g, internal_vcpu *vcpu, gva_t virt_guest) {
+	svm_internal_vcpu* svm_vcpu;
 
-	mah_initialized = 1;
+	svm_vcpu = to_svm_vcpu(vcpu);
+
+	// TODO
+
+	// First, get the cr3 register of the guest: use the first VCPU
+
+	// Check if the VCPU is in long mode
+
+	// Do a pagetable walk for the guest pages
+
+	return 0;
+}
+
+int svm_add_breakpoint_p(internal_guest* g, internal_vcpu* vcpu, gpa_t guest_addr) {
+	uint8_t 				old_byte;
+	uint8_t 				new_byte;
+	internal_breakpoint 	*bp;
+	int						ret;
+
+	ret = read_memory(g->mmu, guest_addr, &old_byte, 1);
+	if (ret) goto err;
+
+	new_byte = 0xcc;
+	ret = write_memory(g->mmu, guest_addr, &new_byte, 1);
+	if (ret) goto err;
+
+	bp = kmalloc(sizeof(internal_breakpoint), GFP_KERNEL);
+	if (bp == NULL) {
+		ret = -EFAULT;
+		goto err;
+	}
+
+	bp->old_mem = old_byte;
+	bp->guest_addr_p = guest_addr;
+
+	insert_breakpoint(g, bp);
+
+err:
+	return ret;
+}
+
+int svm_add_breakpoint_v(internal_guest* g, internal_vcpu* vcpu, gva_t guest_addr) {
+	uint8_t 				old_byte;
+	uint8_t 				new_byte;
+	internal_breakpoint 	*bp;
+	gpa_t					phys_guest;
+	int						ret;
+
+	ret = 0;
+	phys_guest = svm_mmu_gva_to_gpa(g, vcpu, guest_addr);
+
+	ret = read_memory(g->mmu, phys_guest, &old_byte, 1);
+	if (ret) goto err;
+
+	new_byte = 0xcc;
+	ret = write_memory(g->mmu, phys_guest, &new_byte, 1);
+	if (ret) goto err;
+
+	bp = kmalloc(sizeof(internal_breakpoint), GFP_KERNEL);
+	if (bp == NULL) {
+		ret = -EFAULT;
+		goto err;
+	}
+
+	bp->old_mem = old_byte;
+	bp->guest_addr_p = phys_guest;
+	bp->guest_addr_v = guest_addr;
+
+	insert_breakpoint(g, bp);
+
+err:
+	return ret;
+}
+
+int svm_remove_breakpoint(internal_guest *g, internal_vcpu *vcpu, internal_breakpoint *bp) {
+	uint8_t 				byte;
+	int						ret;
+
+	byte = bp->old_mem;
+	ret = write_memory(g->mmu, bp->guest_addr_p, &byte, 1);
+
+	remove_breakpoint(g, bp);
+
+	return ret;
+}
+
+int svm_singlestep(internal_guest *g, internal_vcpu *vcpu) {
+	uint64_t	old_rflags;
+	int			ret;
+
+	svm_internal_vcpu* svm_vcpu;
+	svm_vcpu = to_svm_vcpu(vcpu);
+
+	old_rflags = svm_vcpu->vcpu_vmcb->rflags;
+	svm_vcpu->vcpu_vmcb->rflags |= (uint64_t)1 << 8;
+
+	ret = svm_run_vcpu(vcpu, g);
+
+	svm_vcpu->vcpu_vmcb->rflags = old_rflags;
+
+	return ret;
+}
+
+int svm_handle_breakpoint(internal_guest *g, internal_vcpu *vcpu) {
+	internal_breakpoint 	*bp;
+	svm_internal_vcpu* 		svm_vcpu;
+	gpa_t					phys_guest;
+	gva_t					virt_guest;
+	uint8_t 				byte;
+	int						ret;
+	
+	svm_vcpu = to_svm_vcpu(vcpu);
+	virt_guest = svm_vcpu->vcpu_vmcb->rip;
+
+	// First, look up which breakpoint belongs to that address
+	bp = find_breakpoint_by_gva(g, virt_guest);
+
+	// If we could not find a breakpoint with that virtual address,
+	// iterate over all breakpoints and look if the physical addresses match.
+	// If this is the case, insert the virtual address of the breakpoint (RIP)
+	// into the internal_breakpoint structure.
+	if (bp == NULL) {
+		phys_guest = svm_mmu_gva_to_gpa(g, vcpu, virt_guest);
+		bp = find_breakpoint_by_gpa(g, phys_guest);
+
+		// Only happens if the guest uses internally the int3 instruction.
+		// The condition is only true, if there are int3 instructions which
+		// are not set by the hypervisor.
+		if (bp == NULL) {
+			ret = -EFAULT;
+			goto err;
+		}
+
+		bp->guest_addr_v = virt_guest;
+	} else {
+		// Look if we filled in the physical address of a breakpoint.
+		if (bp->guest_addr_p == 0) {
+			phys_guest = svm_mmu_gva_to_gpa(g, vcpu, virt_guest);
+			bp->guest_addr_p = phys_guest;
+		}
+	}
+
+	// Write the old byte at the breakpoint address
+	byte = bp->old_mem;
+	ret = write_memory(g->mmu, bp->guest_addr_p, &byte, 1);
+	if (ret) goto err;
+
+	// Singlestep
+	ret = svm_singlestep(g, vcpu);
+	if (ret) goto err;
+
+	// Write the int3 again at the guest address
+	byte = 0xcc;
+	ret = write_memory(g->mmu, bp->guest_addr_p, &byte, 1);
+	if (ret) goto err;
+
+err:
+	return ret;
+}
+
+// This function will be called if AMD SVM support is detected
+void init_svm_hyperkraken_ops(void) {
+	hyperkraken_ops.run_vcpu 					= svm_run_vcpu;
+    hyperkraken_ops.create_arch_internal_vcpu 	= svm_create_arch_internal_vcpu,
+	hyperkraken_ops.destroy_arch_internal_vcpu 	= svm_destroy_arch_internal_vcpu,
+    hyperkraken_ops.create_arch_internal_guest 	= svm_create_arch_internal_guest;
+    hyperkraken_ops.destroy_arch_internal_guest = svm_destroy_arch_internal_guest;
+	hyperkraken_ops.set_vcpu_registers 			= svm_set_vcpu_registers;
+    hyperkraken_ops.get_vcpu_registers 			= svm_get_vcpu_registers;
+    hyperkraken_ops.set_memory_region 			= svm_set_memory_region;
+	hyperkraken_ops.map_page_attributes_to_arch	= svm_map_page_attributes_to_arch;
+	hyperkraken_ops.map_arch_to_page_attributes	= svm_map_arch_to_page_attributes;
+	hyperkraken_ops.init_mmu					= svm_init_mmu;
+	hyperkraken_ops.destroy_mmu					= svm_destroy_mmu;
+	hyperkraken_ops.mmu_walk_available			= svm_mmu_walk_available;
+	hyperkraken_ops.mmu_walk_next				= svm_mmu_walk_next;
+	hyperkraken_ops.mmu_walk_init				= svm_mmu_walk_init;
+	hyperkraken_ops.mmu_gva_to_gpa				= svm_mmu_gva_to_gpa;
+	hyperkraken_ops.add_breakpoint_p			= svm_add_breakpoint_p;
+	hyperkraken_ops.add_breakpoint_v			= svm_add_breakpoint_v;
+	hyperkraken_ops.remove_breakpoint			= svm_remove_breakpoint;
+	hyperkraken_ops.singlestep					= svm_singlestep;
+
+	hyperkraken_initialized = 1;
 }

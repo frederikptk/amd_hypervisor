@@ -3,7 +3,7 @@
 #include <ioctl.h>
 #include <stddef.h>
 #include <memory.h>
-#include <mah.h>
+#include <hyperkraken.h>
 
 #include <asm/msr-index.h>
 #include <asm/msr.h>
@@ -17,6 +17,15 @@ inline svm_internal_vcpu* to_svm_vcpu(internal_vcpu *vcpu){
 	return (svm_internal_vcpu*)(vcpu->arch_internal_vcpu);
 }
 
+uint64_t svm_generate_asid(void) {
+	// TODO
+	return 1;
+}
+
+void svm_flush_tlb_by_asid(vmcb *v) {
+	v->tlb_control = TLB_FLUSH_THIS;
+}
+
 int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g) {
 	svm_internal_guest 	*svm_g;
 
@@ -27,7 +36,7 @@ int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g) {
 	svm_g = to_svm_guest(g);
 	TEST_PTR(svm_g, svm_internal_guest*,, ERROR)
 	
-	svm_vcpu->vcpu_vmcb->guest_asid = 1;
+	svm_vcpu->vcpu_vmcb->guest_asid = svm_generate_asid();
 
 	svm_vcpu->vcpu_vmcb->cs.selector = 0xf000;
 	svm_vcpu->vcpu_vmcb->cs.base = 0x0;
@@ -70,8 +79,10 @@ int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g) {
 	svm_vcpu->vcpu_vmcb->msrprm_base_pa = __pa(svm_g->msr_permission_map);
 
 	svm_vcpu->vcpu_vmcb->vmcb_clean = 0x0;
+
+	svm_flush_tlb_by_asid(svm_vcpu->vcpu_vmcb);
 	
-	return SUCCESS;
+	return 0;
 }
 
 u64 msr_rdmsr(u32 msr) {
@@ -83,12 +94,26 @@ u64 msr_rdmsr(u32 msr) {
 uint64_t map_to_pagefault_reason(uint64_t npf_exitinfo) {
 	uint64_t					pagefault_reason = 0;
 
-	if ((npf_exitinfo & NPF_NOT_PRESENT) == 0) pagefault_reason 	|= PAGEFAULT_NON_PRESENT;
-	if (npf_exitinfo & NPF_WRITE_ACCESS) pagefault_reason 	|= PAGEFAULT_WRITE;
-	if (npf_exitinfo & NPF_CODE_ACCESS) pagefault_reason 	|= PAGEFAULT_EXEC;
+	printk(DBG "npf_exitinfo: 0x%llx\n", npf_exitinfo);
+
+	if ((npf_exitinfo & NPF_NOT_PRESENT) == 0) {
+		printk(DBG "p\n");
+	 	pagefault_reason |= PAGEFAULT_NON_PRESENT;
+	}
+	if (npf_exitinfo & NPF_WRITE_ACCESS) {
+		printk(DBG "w\n");
+		pagefault_reason |= PAGEFAULT_WRITE;
+	}
+	if (npf_exitinfo & NPF_CODE_ACCESS) {
+		printk(DBG "e\n");
+		pagefault_reason |= PAGEFAULT_EXEC;
+	}
 	if ((npf_exitinfo & NPF_CODE_ACCESS) == 0 
 		&& (npf_exitinfo & NPF_WRITE_ACCESS) == 0
-		&& (npf_exitinfo & NPF_RESERVED) == 0) pagefault_reason 	|= PAGEFAULT_READ;
+		&& (npf_exitinfo & NPF_RESERVED) == 0) {
+		printk(DBG "r\n");
+		pagefault_reason |= PAGEFAULT_READ;
+	}
 
 	return pagefault_reason;
 }
@@ -105,6 +130,7 @@ void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
 			// Only handle pagefaults in the nested pagetables
 			if ((svm_vcpu->vcpu_vmcb->exitinfo1 & NPF_IN_VMM_PAGE) != 0) {
 				handle_pagefault(__va(svm_vcpu->vcpu_vmcb->n_cr3), svm_vcpu->vcpu_vmcb->exitinfo2, map_to_pagefault_reason(svm_vcpu->vcpu_vmcb->exitinfo1), g);
+				svm_flush_tlb_by_asid(svm_vcpu->vcpu_vmcb);
 			}
 			break;
 		default:
@@ -170,9 +196,9 @@ int svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g) {
 
 		svm_handle_vmexit(vcpu, g);
 	
-		return SUCCESS;
+		return 0;
 	} else {
-		return ERROR;
+		return -EFAULT;
 	}
 }
 
@@ -181,24 +207,24 @@ int svm_check_support(void) {
 	__asm__ ("cpuid; movl %%ecx, %0;" : "=r"(cpuid_ret_val));
 	if (cpuid_ret_val && 0x80000001 == 0){
 		printk(KERN_INFO "[AMD_SVM]: AMD SVM not supported\n");
-		return ERROR;
+		return -EFAULT;
 	}
 
 	__asm__ ("cpuid; movl %%edx, %0;" : "=r"(cpuid_ret_val));
 	if (cpuid_ret_val && 0x8000000A == 0){
 		printk(KERN_INFO "[AMD_SVM]: AMD SVM disabled at bios\n");
-		return ERROR;
+		return -EFAULT;
 	}
 
-	return SUCCESS;
+	return 0;
 }
 
 int svm_set_msrpm_permission(uint8_t *msr_permission_map, uint32_t msr, int read, int write) {
 	unsigned int idx; // the index in the table
 	unsigned int offset; // the offset of the msr in a single byte
 
-	if (read != 0 || read != 1) return ERROR;
-	if (write != 0 || write != 1) return ERROR;
+	if (read != 0 || read != 1) return -EINVAL;
+	if (write != 0 || write != 1) return -EINVAL;
 
 	idx = (int)(msr / 4);
 	offset = 2 * (msr & 0xf);
@@ -208,5 +234,5 @@ int svm_set_msrpm_permission(uint8_t *msr_permission_map, uint32_t msr, int read
 	msr_permission_map[idx] = msr_permission_map[idx] | (read << offset);
 	msr_permission_map[idx] = msr_permission_map[idx] | (write << (offset + 2));
 
-	return SUCCESS;
+	return 0;
 }

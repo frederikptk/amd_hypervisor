@@ -1,6 +1,8 @@
-kernel/mah.ko
+kernel/hyperkraken.ko
 example
+load_qcow2
 *.mod
 *.cmd
 NOTES
 TODO
+tests/output/*

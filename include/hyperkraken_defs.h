@@ -10,8 +10,8 @@
 #include <linux/types.h> // TODO: for userland: use stdint.h
 #include <linux/ioctl.h>
 
-#define PROC_PATH				"mah_ctl"
-#define MAH_PROC_PATH				"/proc/" PROC_PATH
+#define PROC_PATH				"hyperkraken_ctl"
+#define HYPERKRAKEN_PROC_PATH				"/proc/" PROC_PATH
 
 // We define the structs as packed to assure a certain struct layout.
 struct __attribute__ ((__packed__)) user_arg_segment {
@@ -49,6 +49,7 @@ struct __attribute__ ((__packed__)) user_arg_registers {
 	uint64_t	cr2;
 	uint64_t	cr3;
 	uint64_t	cr4;
+	uint64_t	rflags;
 	
 	// Segments
 	struct user_arg_segment	es;
@@ -91,11 +92,11 @@ struct __attribute__ ((__packed__)) user_memory_region {
 #define ERROR				-1
 #define SUCCESS			0
 
-#define MAH_IOCTL_MAGIC					0xAA
-#define MAH_IOCTL_CREATE_GUEST			_IOW  (MAH_IOCTL_MAGIC, 0x0, uint64_t)
-#define MAH_IOCTL_CREATE_VCPU			_IOWR (MAH_IOCTL_MAGIC, 0x1, user_vcpu_guest_id)
-#define MAH_IOCTL_SET_REGISTERS			_IOWR (MAH_IOCTL_MAGIC, 0x2, user_arg_registers)
-#define MAH_IOCTL_GET_REGISTERS			_IOWR (MAH_IOCTL_MAGIC, 0x3, user_arg_registers)
-#define MAH_IOCTL_VCPU_RUN				_IOR  (MAH_IOCTL_MAGIC, 0x4, user_vcpu_guest_id)
-#define MAH_IOCTL_DESTROY_GUEST			_IOR  (MAH_IOCTL_MAGIC, 0x6, uint64_t)
-#define MAH_SET_MEMORY_REGION			_IOR  (MAH_IOCTL_MAGIC, 0x7, user_memory_region)
+#define HYPERKRAKEN_IOCTL_MAGIC					0xAA
+#define HYPERKRAKEN_IOCTL_CREATE_GUEST			_IOW  (HYPERKRAKEN_IOCTL_MAGIC, 0x0, uint64_t)
+#define HYPERKRAKEN_IOCTL_CREATE_VCPU			_IOWR (HYPERKRAKEN_IOCTL_MAGIC, 0x1, user_vcpu_guest_id)
+#define HYPERKRAKEN_IOCTL_SET_REGISTERS			_IOWR (HYPERKRAKEN_IOCTL_MAGIC, 0x2, user_arg_registers)
+#define HYPERKRAKEN_IOCTL_GET_REGISTERS			_IOWR (HYPERKRAKEN_IOCTL_MAGIC, 0x3, user_arg_registers)
+#define HYPERKRAKEN_IOCTL_VCPU_RUN				_IOR  (HYPERKRAKEN_IOCTL_MAGIC, 0x4, user_vcpu_guest_id)
+#define HYPERKRAKEN_IOCTL_DESTROY_GUEST			_IOR  (HYPERKRAKEN_IOCTL_MAGIC, 0x6, uint64_t)
+#define HYPERKRAKEN_SET_MEMORY_REGION			_IOR  (HYPERKRAKEN_IOCTL_MAGIC, 0x7, user_memory_region)
