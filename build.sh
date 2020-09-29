@@ -19,4 +19,12 @@ echo "################################"
 echo "      BUILD USERLAND TEST"
 echo "################################"
 clang -Wall -I./include -I./user/include user/src/main.c -o example
+
+echo "################################"
+echo "       BUILD FUZZ TESTS"
+echo "################################"
+cd tests/fuzz
+./build.sh
+cd ../..
+
 echo "DONE"

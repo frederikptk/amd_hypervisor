@@ -58,8 +58,11 @@ int main() {
 	
 	id_data.guest_id = guest_id;
 	id_data.vcpu_id  = vcpu_id;
+	// First exit: lazy pagefault of code
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_VCPU_RUN, &id_data))
+	// Second exit: lazy pagefault of data @ 0x1000
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_VCPU_RUN, &id_data))
+	// Third exit: HLT instruction as last executed instruction
 	TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_VCPU_RUN, &id_data))
 
 	// Test the result
