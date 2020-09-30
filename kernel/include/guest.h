@@ -104,6 +104,9 @@ struct internal_hyperkraken_ops {
     int         (*add_breakpoint_v)(internal_guest*, internal_vcpu*, gva_t);
     int         (*remove_breakpoint)(internal_guest*, internal_vcpu*, internal_breakpoint *bp);
     int         (*singlestep)(internal_guest* g, internal_vcpu* vcpu);
+
+    // I/O handlers
+    void        (*handle_mmio)(internal_vcpu*, uint64_t);
 } typedef internal_hyperkraken_ops;
 
 extern internal_hyperkraken_ops hyperkraken_ops;

@@ -167,6 +167,11 @@ void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
 	memcpy(&svm_vcpu->vcpu_vmcb->ldtr, &regs->ldtr, sizeof(segment));
 	memcpy(&svm_vcpu->vcpu_vmcb->idtr, &regs->idtr, sizeof(segment));
 	memcpy(&svm_vcpu->vcpu_vmcb->tr, &regs->tr, sizeof(segment));
+
+	// Since registers might have been changed, set the clean bits accordingly.
+	svm_vcpu->vcpu_vmcb->vmcb_clean &= ~VMCB_DIRTY_CRX;
+	svm_vcpu->vcpu_vmcb->vmcb_clean &= ~VMCB_DIRTY_SEG;
+	svm_vcpu->vcpu_vmcb->vmcb_clean &= ~VMCB_DIRTY_CR2;
 }
 
 void svm_get_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
@@ -474,6 +479,14 @@ err:
 	return ret;
 }
 
+void svm_handle_mmio(internal_vcpu *vcpu, uint64_t addr) {
+	svm_internal_vcpu 			*svm_vcpu;
+
+	svm_vcpu = to_svm_vcpu(vcpu);
+
+	// TODO
+}
+
 // This function will be called if AMD SVM support is detected
 void init_svm_hyperkraken_ops(void) {
 	hyperkraken_ops.run_vcpu 					= svm_run_vcpu;
@@ -496,6 +509,7 @@ void init_svm_hyperkraken_ops(void) {
 	hyperkraken_ops.add_breakpoint_v			= svm_add_breakpoint_v;
 	hyperkraken_ops.remove_breakpoint			= svm_remove_breakpoint;
 	hyperkraken_ops.singlestep					= svm_singlestep;
+	hyperkraken_ops.handle_mmio					= svm_handle_mmio;
 
 	hyperkraken_initialized = 1;
 }

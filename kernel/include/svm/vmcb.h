@@ -197,12 +197,17 @@ struct __attribute__ ((__packed__)) gp_regs {
 #define VMEXIT_INVD				0x76
 #define VMEXIT_PAUSE			0x77
 #define VMEXIT_HLT				0x78
+#define VMEXIT_INVLPG			0x79
+#define VMEXIT_INVLPGA			0x7a
+#define VMEXIT_IOIO				0x7b
 #define VMEXIT_MSR 				0x7c
+#define VMEXIT_SHUTDOWN			0x7f
 #define VMEXIT_VMRUN 			0x80
 #define VMEXIT_VMMCALL			0x81
 #define VMEXIT_VMLOAD			0x82
 #define VMEXIT_VMSAVE			0x83
 #define VMEXIT_STGI				0x84
+#define VMEXIT_CLGI				0x85
 #define VMEXIT_SKINIT			0x86
 #define VMEXIT_RDTSCP			0x87
 #define VMEXIT_ICEBP			0x88
@@ -240,3 +245,19 @@ struct __attribute__ ((__packed__)) gp_regs {
 #define EVENT_INJECT_TYPE_NMI			((uint64_t)2)
 #define EVENT_INJECT_TYPE_EXCEPTION		((uint64_t)3)
 #define EVENT_INJECT_TYPE_INTN			((uint64_t)4)
+
+// VMCB cache dirty bits
+#define VMCB_DIRTY_I					((uint32_t)1 << 0)
+#define VMCB_DIRTY_IOPM					((uint32_t)1 << 1)
+#define VMCB_DIRTY_ASID					((uint32_t)1 << 2)
+#define VMCB_DIRTY_TPR					((uint32_t)1 << 3)
+#define VMCB_DIRTY_NP					((uint32_t)1 << 4)
+#define VMCB_DIRTY_CRX					((uint32_t)1 << 5)
+#define VMCB_DIRTY_DRX					((uint32_t)1 << 6)
+#define VMCB_DIRTY_DT					((uint32_t)1 << 7)
+#define VMCB_DIRTY_SEG					((uint32_t)1 << 8)
+#define VMCB_DIRTY_CR2					((uint32_t)1 << 9)
+#define VMCB_DIRTY_LBR					((uint32_t)1 << 10)
+#define VMCB_DIRTY_AVIC					((uint32_t)1 << 11)
+#define VMCB_DIRTY_ALL_CLEAN			((uint32_t)0xffffffff)
+#define VMCB_DIRTY_ALL_DIRTY			((uint32_t)0x0)

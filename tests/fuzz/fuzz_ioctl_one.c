@@ -4,12 +4,16 @@
 
 #include <stdint.h>
 #include <hyperkraken_defs.h>
-#include <stlib.h>
 #include <stdio.h>
-#include <time.h>
+#include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+#include <time.h>
 
 #define MAX_MMAP_REGIONS            128
 
@@ -17,12 +21,13 @@ void* mmap_regions[MAX_MMAP_REGIONS];
 size_t  mmap_sizes[MAX_MMAP_REGIONS];
 unsigned int mmap_regions_counter = 0; 
 
-int main() {
+int main(int argc, char** argv) {
     int						ctl_fd;
     user_arg_registers		regs;
 	user_vcpu_guest_id		id_data;
-	uint64_t				guest_id, vcpu_id;
+	uint64_t				guest_id;
 	user_memory_region		region;
+    unsigned int            r;
 
     srand(time(0));
 
@@ -44,10 +49,11 @@ int main() {
                     id_data.guest_id = guest_id;
                     ioctl(ctl_fd, HYPERKRAKEN_IOCTL_CREATE_VCPU, &id_data); 
                     break;
-                case 2 .. 3 : 
+                case 2:
+                case 3: 
                     memset(&regs, rand(), sizeof(user_arg_registers));
                     regs.guest_id = guest_id;
-                    rand() % 2 == 0 ? regs.vcpu_id = rand() % 20: regs.vcpu_id = id_data.vcpu_id;
+                    regs.vcpu_id  = rand() % 2 == 0 ? rand() % 20: id_data.vcpu_id;
                     ioctl(ctl_fd, HYPERKRAKEN_IOCTL_SET_REGISTERS, &regs);
                     break;
                 case 4 : 
@@ -59,7 +65,8 @@ int main() {
                     // skip guest destruction command 
                     break;
                 case 6 :
-                    unsigned int r = rand() % 3;
+                    r = rand() % 3;
+
                     if (r == 0) {
                         unsigned int idx = rand() % (MAX_MMAP_REGIONS - 1);
                         size_t sz = rand() % 0x10000;
@@ -100,6 +107,6 @@ int main() {
     }
 
     // Will never be reached.
-    fclose(ctl_fd);
+    close(ctl_fd);
     return EXIT_SUCCESS;
 }

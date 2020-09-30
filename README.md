@@ -76,15 +76,22 @@ In order to build HYPERKRAKEN, clone the repository and execute:
  - CPU reset: enter realmode instead of protected mode, move code to userland
  - Add automated tests
  - Guest test OS
- - Breakpoints
- - Event injection
- - VMCB state caching
+ - guest virtual to guest phyiscal address
+ - ASID generation
+ - removal of unnecessary TEST_PTR calls
+ - change pointers to be like in the Linux kernel
+ - MSR intercept handling
+ - instruction intercept handling
 
 ## DONE
  - Lazy faulting
  - MMU abtraction
  - Arch-dependence abstraction
  - Copy-on-write
+ - ioctl fuzzing code for a single guest
+ - Breakpoints
+ - Event injection
+ - VMCB state caching
 
 ## IDEAS
  - converage-guided fuzzing with libfuzzer: User breakpoints & shared page in kernel

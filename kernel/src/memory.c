@@ -117,7 +117,7 @@ void mmu_rollback_cow_pages(internal_mmu *m, internal_memory_region *region) {
 	}
 }
 
-int handle_pagefault(hpa_t *base, gpa_t phys_guest, uint64_t reason, internal_guest *g) {
+int handle_pagefault(internal_guest *g, internal_vcpu *vcpu, hpa_t *base, gpa_t phys_guest, uint64_t reason) {
 	internal_memory_region 	*region;
 
 	printk(DBG "handle_pagefault, reason: 0x%llx\n", reason);
@@ -146,9 +146,12 @@ int handle_pagefault(hpa_t *base, gpa_t phys_guest, uint64_t reason, internal_gu
 		}
 	}
 
-	// Else: TODO: MMIO handling
+	// If there is a fault upon accessing an MMIO region, do the arch-dependent emulation.
 	if (region->is_mmio) {
 		printk(DBG "MMIO\n");
+
+		hyperkraken_ops.handle_mmio(vcpu, phys_guest);
+
 		return 0;
 	}
 

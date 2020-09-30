@@ -7,6 +7,7 @@
 #include <linux/types.h>
 
 typedef struct internal_guest internal_guest;
+typedef struct internal_vcpu internal_vcpu;
 
 #define PAGE_TABLE_MASK             (uint64_t)0x7FFFFFFFFFFFF000 // Also mask out NX bit (bit 63)
 
@@ -60,7 +61,7 @@ int  set_pagetable_attributes(internal_mmu* m, gpa_t phys_guest, uint64_t attrib
 int  get_pagetable_attributes(internal_mmu* m, gpa_t phys_guest);
 int  map_to(hpa_t* base, gpa_t phys_guest, hpa_t phys_host, size_t sz, internal_guest* g);
 int  map_user_memory(internal_mmu* m, hpa_t* base, gpa_t phys_guest, hva_t virt_user, internal_memory_region* region); // Called by hypervisor pagefault handler.
-int  handle_pagefault(hpa_t* base, gpa_t phys_guest, uint64_t reason, internal_guest* g);
+int  handle_pagefault(internal_guest *g, internal_vcpu *vcpu, hpa_t *base, gpa_t phys_guest, uint64_t reason);
 int  free_nested_pages(hpa_t* base, internal_guest* g);
 int  write_memory(internal_mmu* m, gpa_t phys_guest, void* src, size_t sz);
 int  read_memory(internal_mmu* m, gpa_t phys_guest, void* dst, size_t sz);

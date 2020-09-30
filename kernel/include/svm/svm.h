@@ -35,5 +35,11 @@ int svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g);
 int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g);
 int svm_check_support(void);
 int svm_set_msrpm_permission(uint8_t *msr_permission_map, uint32_t msr, int read, int write);
+void svm_forward_rip(internal_vcpu *vcpu);
+void svm_inject_event(internal_vcpu *vcpu, unsigned int type, uint8_t vector, uint32_t errorcode);
+void svm_handle_msr_access_write(internal_vcpu *vcpu);
+void svm_handle_msr_access_read(internal_vcpu *vcpu);
+void svm_handle_io(internal_vcpu *vcpu);
+void svm_handle_mmio(internal_vcpu *vcpu, uint64_t addr);
 
 extern void svm_run_vcpu_asm(unsigned long phys_addr_guest_vmcb, unsigned long phys_addr_host_vmcb, unsigned long saved_guest_regs_addr);

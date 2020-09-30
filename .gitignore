@@ -6,3 +6,7 @@ load_qcow2
 NOTES
 TODO
 tests/output/*
+fuzz_ioctl_one
+fuzz_ioctl_datarace
+tests/fuzz/build
+tests/output

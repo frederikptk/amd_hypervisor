@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <memory.h>
 #include <hyperkraken.h>
+#include <x86/x86.h>
 
 #include <asm/msr-index.h>
 #include <asm/msr.h>
@@ -78,7 +79,7 @@ int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g) {
 
 	svm_vcpu->vcpu_vmcb->msrprm_base_pa = __pa(svm_g->msr_permission_map);
 
-	svm_vcpu->vcpu_vmcb->vmcb_clean = 0x0;
+	svm_vcpu->vcpu_vmcb->vmcb_clean = VMCB_DIRTY_ALL_DIRTY;
 
 	svm_flush_tlb_by_asid(svm_vcpu->vcpu_vmcb);
 	
@@ -123,15 +124,52 @@ void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
 
 	svm_vcpu = to_svm_vcpu(vcpu);
 
+	// We set clean bits as needed.
+	svm_vcpu->vcpu_vmcb->vmcb_clean = VMCB_DIRTY_ALL_CLEAN;
+
 	printk(DBG "#VMEXIT exitcode: 0x%lx, exitinfo1: 0x%lx, exitinfo2: 0x%lx\n", (unsigned long)svm_vcpu->vcpu_vmcb->exitcode, (unsigned long)svm_vcpu->vcpu_vmcb->exitinfo1, (unsigned long)svm_vcpu->vcpu_vmcb->exitinfo2);
 
 	switch (svm_vcpu->vcpu_vmcb->exitcode) {
 		case VMEXIT_NPF:
 			// Only handle pagefaults in the nested pagetables
 			if ((svm_vcpu->vcpu_vmcb->exitinfo1 & NPF_IN_VMM_PAGE) != 0) {
-				handle_pagefault(__va(svm_vcpu->vcpu_vmcb->n_cr3), svm_vcpu->vcpu_vmcb->exitinfo2, map_to_pagefault_reason(svm_vcpu->vcpu_vmcb->exitinfo1), g);
+				handle_pagefault(g, vcpu, __va(svm_vcpu->vcpu_vmcb->n_cr3), svm_vcpu->vcpu_vmcb->exitinfo2, map_to_pagefault_reason(svm_vcpu->vcpu_vmcb->exitinfo1));
 				svm_flush_tlb_by_asid(svm_vcpu->vcpu_vmcb);
 			}
+			break;
+		case VMEXIT_EXCP_BASE + EXCEPTION_DB:
+			// Singlestepping
+			break;
+		case VMEXIT_EXCP_BASE + EXCEPTION_BP:
+			// Breakpoint handling
+			svm_handle_breakpoint(g, vcpu);
+			break;
+		case VMEXIT_MSR:
+			// MSR access handling
+			if (svm_vcpu->vcpu_vmcb->exitinfo1) {
+				svm_handle_msr_access_write(vcpu);
+			} else {
+				svm_handle_msr_access_read(vcpu);
+			}
+			break;
+		case VMEXIT_IOIO:
+			svm_handle_io(vcpu);
+			break;
+		case VMEXIT_INVD:
+		case VMEXIT_SHUTDOWN:
+		case VMEXIT_VMRUN:
+		case VMEXIT_VMMCALL:
+		case VMEXIT_VMLOAD:
+		case VMEXIT_VMSAVE:
+		case VMEXIT_STGI:
+		case VMEXIT_CLGI:
+		case VMEXIT_SKINIT:
+		case VMEXIT_ICEBP:
+		case VMEXIT_INVLPGA:
+		case VMEXIT_INVLPGB:
+			// Skip these instructions and generate a #UD in the guest.
+			svm_forward_rip(vcpu);
+			svm_inject_event(vcpu, EVENT_INJECT_TYPE_EXCEPTION, EXCEPTION_UD, 0);
 			break;
 		default:
 			printk(DBG "Unknown exit code: 0x%llx, exitinfo1: 0x%llx, exitinfo2: 0x%llx\n", svm_vcpu->vcpu_vmcb->exitcode, svm_vcpu->vcpu_vmcb->exitinfo1, svm_vcpu->vcpu_vmcb->exitinfo2);
@@ -206,17 +244,24 @@ int svm_check_support(void) {
 	unsigned int cpuid_ret_val;
 	__asm__ ("cpuid; movl %%ecx, %0;" : "=r"(cpuid_ret_val));
 	if (cpuid_ret_val && 0x80000001 == 0){
-		printk(KERN_INFO "[AMD_SVM]: AMD SVM not supported\n");
+		printk(DBG "AMD SVM not supported\n");
 		return -EFAULT;
 	}
 
 	__asm__ ("cpuid; movl %%edx, %0;" : "=r"(cpuid_ret_val));
 	if (cpuid_ret_val && 0x8000000A == 0){
-		printk(KERN_INFO "[AMD_SVM]: AMD SVM disabled at bios\n");
+		printk(DBG "AMD SVM disabled at bios\n");
 		return -EFAULT;
 	}
 
 	return 0;
+}
+
+void svm_forward_rip(internal_vcpu *vcpu) {
+	svm_internal_vcpu 			*svm_vcpu;
+
+	svm_vcpu = to_svm_vcpu(vcpu);
+	svm_vcpu->vcpu_vmcb->rip = svm_vcpu->vcpu_vmcb->next_rip;
 }
 
 int svm_set_msrpm_permission(uint8_t *msr_permission_map, uint32_t msr, int read, int write) {
@@ -235,4 +280,60 @@ int svm_set_msrpm_permission(uint8_t *msr_permission_map, uint32_t msr, int read
 	msr_permission_map[idx] = msr_permission_map[idx] | (write << (offset + 2));
 
 	return 0;
+}
+
+void svm_inject_event(internal_vcpu *vcpu, unsigned int type, uint8_t vector, uint32_t errorcode) {
+	svm_internal_vcpu 			*svm_vcpu;
+
+	svm_vcpu = to_svm_vcpu(vcpu);
+
+	svm_vcpu->vcpu_vmcb->event_inject = vector | (type << 8) | EVENT_INJECT_VALID;
+
+	// Check if this vector pushes an errorcode onto the stack.
+	if (vector == 10 || vector == 11 || vector == 12 || vector == 13 || vector == 14) {
+		svm_vcpu->vcpu_vmcb->event_inject_error = errorcode;
+		svm_vcpu->vcpu_vmcb->event_inject |= EVENT_INJECT_ERROR_VALID;
+	} else {
+		svm_vcpu->vcpu_vmcb->event_inject_error = 0;
+	}
+}
+
+void svm_handle_msr_access_write(internal_vcpu *vcpu) {
+	svm_internal_vcpu 			*svm_vcpu;
+
+	svm_vcpu = to_svm_vcpu(vcpu);
+
+	// Currently, we allowed access to all necessary MSRs. Inject a #GP
+	svm_inject_event(vcpu, EVENT_INJECT_TYPE_EXCEPTION, EXCEPTION_GP, 0);
+
+}
+
+void svm_handle_msr_access_read(internal_vcpu *vcpu) {
+	svm_internal_vcpu 			*svm_vcpu;
+
+	svm_vcpu = to_svm_vcpu(vcpu);
+
+	// Currently, we allowed access to all necessary MSRs. Inject a #GP
+	svm_inject_event(vcpu, EVENT_INJECT_TYPE_EXCEPTION, EXCEPTION_GP, 0);
+}
+
+void svm_handle_io(internal_vcpu *vcpu) {
+	svm_internal_vcpu 			*svm_vcpu;
+	int							in;
+	uint32_t					rep;
+	uint32_t					op_size;
+	uint16_t					port;
+	uint32_t					eax;
+
+	svm_vcpu = to_svm_vcpu(vcpu);
+
+	in 		= (svm_vcpu->vcpu_vmcb->exitinfo1 & (1 << 0)) ? 1 : 0;
+	rep 	= (svm_vcpu->vcpu_vmcb->exitinfo1 & (1 << 3)) ? 1 : 0;
+	op_size	= (svm_vcpu->vcpu_vmcb->exitinfo1 >> 4) & 0x7;
+	port 	= (uint16_t)(svm_vcpu->vcpu_vmcb->exitinfo1 >> 16);
+	eax 	= (uint32_t)(svm_vcpu->vcpu_vmcb->rax);
+
+	x86_handle_io(in, op_size, port, &eax);
+	if (in) svm_vcpu->vcpu_vmcb->rax = eax;
+	svm_forward_rip(vcpu);
 }
