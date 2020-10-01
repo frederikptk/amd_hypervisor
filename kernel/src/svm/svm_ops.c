@@ -4,12 +4,13 @@
 #include <memory.h>
 #include <stddef.h>
 #include <hyperkraken.h>
+#include <x86/x86.h>
 
 #include <linux/slab.h>
 
-void* svm_create_arch_internal_guest(internal_guest* g) {
-	svm_internal_guest* svm_g;
-	unsigned int i;
+void* svm_create_arch_internal_guest(internal_guest *g) {
+	svm_internal_guest	*svm_g;
+	unsigned int 		i;
 
 	svm_g = (svm_internal_guest*) kzalloc(sizeof(internal_guest), GFP_KERNEL);
 	TEST_PTR(svm_g, svm_internal_guest*,,NULL)
@@ -52,8 +53,8 @@ void* svm_create_arch_internal_guest(internal_guest* g) {
 	return (void*)svm_g;
 }
 
-void svm_destroy_arch_internal_guest(internal_guest* g) {
-	svm_internal_guest* svm_g;
+void svm_destroy_arch_internal_guest(internal_guest *g) {
+	svm_internal_guest		*svm_g;
 
 	TEST_PTR(g, internal_guest*,,)
 	svm_g = to_svm_guest(g);
@@ -67,9 +68,9 @@ void svm_destroy_arch_internal_guest(internal_guest* g) {
 	}
 }
 
-void* svm_create_arch_internal_vcpu(internal_guest* g) {
-	svm_internal_guest* svm_g;
-	svm_internal_vcpu* svm_vcpu;
+void* svm_create_arch_internal_vcpu(internal_guest *g) {
+	svm_internal_guest	*svm_g;
+	svm_internal_vcpu	*svm_vcpu;
 
 	TEST_PTR(g, internal_guest*,, NULL)
 	svm_g = to_svm_guest(g);
@@ -92,8 +93,8 @@ void* svm_create_arch_internal_vcpu(internal_guest* g) {
 	return (void*)svm_vcpu;
 }
 
-int svm_destroy_arch_internal_vcpu(internal_vcpu* vcpu) {
-	svm_internal_vcpu* svm_vcpu;
+int svm_destroy_arch_internal_vcpu(internal_vcpu *vcpu) {
+	svm_internal_vcpu	*svm_vcpu;
 	
 	TEST_PTR(vcpu, internal_vcpu*,, ERROR);
 
@@ -108,8 +109,8 @@ int svm_destroy_arch_internal_vcpu(internal_vcpu* vcpu) {
 	return -EFAULT;
 }
 
-void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
-	svm_internal_vcpu* svm_vcpu;
+void svm_set_vcpu_registers(internal_vcpu *vcpu, user_arg_registers *regs) {
+	svm_internal_vcpu	*svm_vcpu;
 
 	printk(DBG "Setting registers of VCPU: 0x%lx\n", (unsigned long)vcpu);
 	
@@ -174,8 +175,8 @@ void svm_set_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
 	svm_vcpu->vcpu_vmcb->vmcb_clean &= ~VMCB_DIRTY_CR2;
 }
 
-void svm_get_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
-	svm_internal_vcpu* svm_vcpu;
+void svm_get_vcpu_registers(internal_vcpu *vcpu, user_arg_registers  *regs) {
+	svm_internal_vcpu	*svm_vcpu;
 	
 	printk(DBG "Getting registers of VCPU: 0x%lx\n", (unsigned long)vcpu);
 
@@ -235,7 +236,7 @@ void svm_get_vcpu_registers(internal_vcpu* vcpu, user_arg_registers* regs) {
 	memcpy(&regs->tr, &svm_vcpu->vcpu_vmcb->tr, sizeof(segment));
 }
 
-void svm_set_memory_region(internal_guest* g, internal_memory_region* memory_region) {
+void svm_set_memory_region(internal_guest *g, internal_memory_region *memory_region) {
 	// TODO
 }
 
@@ -272,14 +273,14 @@ uint64_t svm_map_arch_to_page_attributes(uint64_t attrib) {
 	return ret;
 }
 
-void svm_init_mmu(internal_mmu* m) {
+void svm_init_mmu(internal_mmu *m) {
 	m->levels = 4;
 	m->base = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	INIT_LIST_HEAD(&m->pagetables_list);
 	INIT_LIST_HEAD(&m->memory_region_list);
 }
 
-void svm_destroy_mmu(internal_mmu* m) {
+void svm_destroy_mmu(internal_mmu *m) {
 	if (m->base) kfree(m->base);
 }
 
@@ -332,7 +333,7 @@ gpa_t svm_mmu_gva_to_gpa(internal_guest *g, internal_vcpu *vcpu, gva_t virt_gues
 	return 0;
 }
 
-int svm_add_breakpoint_p(internal_guest* g, internal_vcpu* vcpu, gpa_t guest_addr) {
+int svm_add_breakpoint_p(internal_guest *g, internal_vcpu *vcpu, gpa_t guest_addr) {
 	uint8_t 				old_byte;
 	uint8_t 				new_byte;
 	internal_breakpoint 	*bp;
@@ -360,7 +361,7 @@ err:
 	return ret;
 }
 
-int svm_add_breakpoint_v(internal_guest* g, internal_vcpu* vcpu, gva_t guest_addr) {
+int svm_add_breakpoint_v(internal_guest *g, internal_vcpu *vcpu, gva_t guest_addr) {
 	uint8_t 				old_byte;
 	uint8_t 				new_byte;
 	internal_breakpoint 	*bp;
@@ -414,6 +415,8 @@ int svm_singlestep(internal_guest *g, internal_vcpu *vcpu) {
 
 	old_rflags = svm_vcpu->vcpu_vmcb->rflags;
 	svm_vcpu->vcpu_vmcb->rflags |= (uint64_t)1 << 8;
+
+	vcpu->state = VCPU_STATE_SINGLESTEP;
 
 	ret = svm_run_vcpu(vcpu, g);
 
@@ -479,14 +482,6 @@ err:
 	return ret;
 }
 
-void svm_handle_mmio(internal_vcpu *vcpu, uint64_t addr) {
-	svm_internal_vcpu 			*svm_vcpu;
-
-	svm_vcpu = to_svm_vcpu(vcpu);
-
-	// TODO
-}
-
 // This function will be called if AMD SVM support is detected
 void init_svm_hyperkraken_ops(void) {
 	hyperkraken_ops.run_vcpu 					= svm_run_vcpu;
@@ -509,7 +504,7 @@ void init_svm_hyperkraken_ops(void) {
 	hyperkraken_ops.add_breakpoint_v			= svm_add_breakpoint_v;
 	hyperkraken_ops.remove_breakpoint			= svm_remove_breakpoint;
 	hyperkraken_ops.singlestep					= svm_singlestep;
-	hyperkraken_ops.handle_mmio					= svm_handle_mmio;
+	hyperkraken_ops.handle_mmio					= x86_handle_mmio;
 
 	hyperkraken_initialized = 1;
 }

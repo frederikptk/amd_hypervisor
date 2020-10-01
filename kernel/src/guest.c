@@ -16,19 +16,19 @@ void guest_list_unlock(void) {
 	mutex_unlock(&g_guests_mutex);
 }
 
-void guest_vcpu_read_lock(internal_guest* g) {
+void guest_vcpu_read_lock(internal_guest *g) {
     down_read(&g->vcpu_lock);
 }
 
-void guest_vcpu_read_unlock(internal_guest* g) {
+void guest_vcpu_read_unlock(internal_guest *g) {
     up_read(&g->vcpu_lock);
 }
 
-void guest_vcpu_write_lock(internal_guest* g) {
+void guest_vcpu_write_lock(internal_guest *g) {
     down_write(&g->vcpu_lock);
 }
 
-void guest_vcpu_write_unlock(internal_guest* g) {
+void guest_vcpu_write_unlock(internal_guest *g) {
     up_write(&g->vcpu_lock);
 }
 
@@ -97,7 +97,7 @@ internal_guest* map_guest_id_to_guest(uint64_t id) {
     return (internal_guest*)NULL;
 }
 
-int insert_new_guest(internal_guest* g) {
+int insert_new_guest(internal_guest *g) {
     unsigned int i;
 
     for (i = 0; i < MAX_NUM_GUESTS; i++) {
@@ -124,7 +124,7 @@ int remove_guest(internal_guest* g) {
     return -EINVAL;
 }
 
-internal_vcpu* map_vcpu_id_to_vcpu(uint64_t id, internal_guest* g) {
+internal_vcpu* map_vcpu_id_to_vcpu(uint64_t id, internal_guest *g) {
 	unsigned int i;
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {
@@ -136,7 +136,7 @@ internal_vcpu* map_vcpu_id_to_vcpu(uint64_t id, internal_guest* g) {
     return (internal_vcpu*)NULL;
 }
 
-int insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g) {
+int insert_new_vcpu(internal_vcpu *vcpu, internal_guest *g) {
     unsigned int i;
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {
@@ -151,7 +151,7 @@ int insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g) {
     return -EINVAL;
 }
 
-int remove_vcpu(internal_vcpu* vcpu, internal_guest* g) {
+int remove_vcpu(internal_vcpu *vcpu, internal_guest *g) {
     unsigned int i;
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {
@@ -165,7 +165,7 @@ int remove_vcpu(internal_vcpu* vcpu, internal_guest* g) {
     return -EINVAL;
 }
 
-void for_every_vcpu(internal_guest* g, void(*callback)(internal_vcpu*, void*), void* arg) {
+void for_every_vcpu(internal_guest *g, void(*callback)(internal_vcpu*, void*), void *arg) {
     unsigned int i;
 
     for (i = 0; i < MAX_NUM_VCPUS; i++) {

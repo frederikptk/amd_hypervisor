@@ -51,17 +51,17 @@ struct internal_mmu {
     struct list_head    memory_region_list;
 } typedef internal_mmu;
 
-void mmu_add_memory_region(internal_mmu* m, internal_memory_region* region);
-void mmu_destroy_all_memory_regions(internal_mmu* m);
-internal_memory_region* mmu_map_guest_addr_to_memory_region(internal_mmu* m, gpa_t phys_guest);
-void mmu_add_pagetable(internal_mmu* m, void* pagetable_ptr);
-void mmu_destroy_all_pagetables(internal_mmu* m);
-int  map_nested_pages_to(internal_mmu* m, hpa_t* base, gpa_t phys_guest, hpa_t phys_host);
-int  set_pagetable_attributes(internal_mmu* m, gpa_t phys_guest, uint64_t attributes);
-int  get_pagetable_attributes(internal_mmu* m, gpa_t phys_guest);
-int  map_to(hpa_t* base, gpa_t phys_guest, hpa_t phys_host, size_t sz, internal_guest* g);
-int  map_user_memory(internal_mmu* m, hpa_t* base, gpa_t phys_guest, hva_t virt_user, internal_memory_region* region); // Called by hypervisor pagefault handler.
+void mmu_add_memory_region(internal_mmu *m, internal_memory_region *region);
+void mmu_destroy_all_memory_regions(internal_mmu *m);
+internal_memory_region* mmu_map_guest_addr_to_memory_region(internal_mmu *m, gpa_t phys_guest);
+void mmu_add_pagetable(internal_mmu *m, void *pagetable_ptr);
+void mmu_destroy_all_pagetables(internal_mmu *m);
+int  map_nested_pages_to(internal_mmu *m, hpa_t *base, gpa_t phys_guest, hpa_t phys_host);
+int  set_pagetable_attributes(internal_mmu *m, gpa_t phys_guest, uint64_t attributes);
+int  get_pagetable_attributes(internal_mmu *m, gpa_t phys_guest);
+int  map_to(hpa_t *base, gpa_t phys_guest, hpa_t phys_host, size_t sz, internal_guest *g);
+int  map_user_memory(internal_mmu *m, hpa_t *base, gpa_t phys_guest, hva_t virt_user, internal_memory_region *region); // Called by hypervisor pagefault handler.
 int  handle_pagefault(internal_guest *g, internal_vcpu *vcpu, hpa_t *base, gpa_t phys_guest, uint64_t reason);
-int  free_nested_pages(hpa_t* base, internal_guest* g);
-int  write_memory(internal_mmu* m, gpa_t phys_guest, void* src, size_t sz);
-int  read_memory(internal_mmu* m, gpa_t phys_guest, void* dst, size_t sz);
+int  free_nested_pages(hpa_t *base, internal_guest *g);
+int  write_memory(internal_mmu *m, gpa_t phys_guest, void *src, size_t sz);
+int  read_memory(internal_mmu *m, gpa_t phys_guest, void *dst, size_t sz);

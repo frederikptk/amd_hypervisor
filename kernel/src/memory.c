@@ -65,7 +65,7 @@ void unmap_user_memory(internal_memory_region *region) {
 	mmap_read_unlock(current->mm);
 }
 
-void mmu_prepare_page_for_cow(internal_mmu* m, gpa_t phys_guest, internal_memory_region *region) {
+void mmu_prepare_page_for_cow(internal_mmu *m, gpa_t phys_guest, internal_memory_region *region) {
 	// Mark the old nested pagetable entry as read-only
 	set_pagetable_attributes(m, phys_guest, PAGE_ATTRIB_READ | PAGE_ATTRIB_EXEC | PAGE_ATTRIB_PRESENT);
 }
@@ -150,7 +150,12 @@ int handle_pagefault(internal_guest *g, internal_vcpu *vcpu, hpa_t *base, gpa_t 
 	if (region->is_mmio) {
 		printk(DBG "MMIO\n");
 
-		hyperkraken_ops.handle_mmio(vcpu, phys_guest);
+		if (reason & PAGEFAULT_NON_PRESENT) {
+			map_user_memory(g->mmu, base, phys_guest, region->userspace_addr + (phys_guest - region->guest_addr), region);
+			hyperkraken_ops.handle_mmio(vcpu, phys_guest, (reason & PAGEFAULT_WRITE ? 1 : 0));
+			hyperkraken_ops.singlestep(g, vcpu);
+			set_pagetable_attributes(g->mmu, phys_guest, PAGE_ATTRIB_READ | PAGE_ATTRIB_EXEC);
+		}
 
 		return 0;
 	}
@@ -195,8 +200,8 @@ internal_memory_region* mmu_map_guest_addr_to_memory_region(internal_mmu *m, gpa
 	return NULL;
 }
 
-void mmu_add_pagetable(internal_mmu* m, void* pagetable_ptr) {
-    pagetable *p;
+void mmu_add_pagetable(internal_mmu *m, void* pagetable_ptr) {
+    pagetable 	*p;
     p = kmalloc(sizeof(pagetable), GFP_KERNEL);
 	p->pagetable = pagetable_ptr;
     list_add_tail(&p->list_node, &m->pagetables_list);
@@ -204,8 +209,8 @@ void mmu_add_pagetable(internal_mmu* m, void* pagetable_ptr) {
 	printk(DBG "Adding pagetable: 0x%lx\n", (unsigned long)pagetable_ptr);
 }
 
-void mmu_destroy_all_pagetables(internal_mmu* m) {
-    pagetable *p, *tmp_p;
+void mmu_destroy_all_pagetables(internal_mmu *m) {
+    pagetable 	*p, *tmp_p;
 
     list_for_each_entry_safe(p, tmp_p, &m->pagetables_list, list_node) {
         if (p != NULL) {
@@ -218,7 +223,7 @@ void mmu_destroy_all_pagetables(internal_mmu* m) {
     }
 }
 
-int map_nested_pages_to(internal_mmu* m, hpa_t *base, gpa_t phys_guest, hpa_t phys_host) {
+int map_nested_pages_to(internal_mmu *m, hpa_t *base, gpa_t phys_guest, hpa_t phys_host) {
     unsigned int    level;
     hpa_t          	*current_pte;
 	hpa_t			*next_base;
@@ -256,7 +261,7 @@ int map_nested_pages_to(internal_mmu* m, hpa_t *base, gpa_t phys_guest, hpa_t ph
     return -EFAULT;
 }
 
-int set_pagetable_attributes(internal_mmu* m, gpa_t phys_guest, uint64_t attributes) {
+int set_pagetable_attributes(internal_mmu *m, gpa_t phys_guest, uint64_t attributes) {
 	unsigned int    level;
     hpa_t	        *current_pte;
 
@@ -270,7 +275,7 @@ int set_pagetable_attributes(internal_mmu* m, gpa_t phys_guest, uint64_t attribu
     return -EFAULT;
 }
 
-int get_pagetable_attributes(internal_mmu* m, gpa_t phys_guest) {
+int get_pagetable_attributes(internal_mmu *m, gpa_t phys_guest) {
 	unsigned int    level;
     hpa_t          	*current_pte;
 
@@ -283,7 +288,7 @@ int get_pagetable_attributes(internal_mmu* m, gpa_t phys_guest) {
     return -EFAULT;
 }
 
-int  write_memory(internal_mmu* m, gpa_t phys_guest, void* src, size_t sz) {
+int  write_memory(internal_mmu *m, gpa_t phys_guest, void *src, size_t sz) {
 	unsigned int    level;
     hpa_t          	*current_pte;
 	void*			page_ptr;
@@ -302,7 +307,7 @@ int  write_memory(internal_mmu* m, gpa_t phys_guest, void* src, size_t sz) {
 	return -EFAULT;
 }
 
-int  read_memory(internal_mmu* m, gpa_t phys_guest, void* dst, size_t sz) {
+int  read_memory(internal_mmu *m, gpa_t phys_guest, void *dst, size_t sz) {
 	unsigned int    level;
     hpa_t          	*current_pte;
 	void*			page_ptr;

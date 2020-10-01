@@ -10,3 +10,5 @@ fuzz_ioctl_one
 fuzz_ioctl_datarace
 tests/fuzz/build
 tests/output
+tmp
+tmp/*

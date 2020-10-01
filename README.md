@@ -72,7 +72,6 @@ In order to build HYPERKRAKEN, clone the repository and execute:
  - Log of all accessed pages
  - Check if number of VCPUs is within number of phyiscal cores
  - IO permissions
- - All exitcodes and instruction intercept definitions
  - CPU reset: enter realmode instead of protected mode, move code to userland
  - Add automated tests
  - Guest test OS
@@ -80,6 +79,8 @@ In order to build HYPERKRAKEN, clone the repository and execute:
  - ASID generation
  - removal of unnecessary TEST_PTR calls
  - change pointers to be like in the Linux kernel
+
+ - All exitcodes and instruction intercept definitions
  - MSR intercept handling
  - instruction intercept handling
 

@@ -34,15 +34,15 @@ struct internal_guest {
 void            destroy_guest(internal_guest *g);
 internal_guest* create_guest(void);
 internal_guest* map_guest_id_to_guest(uint64_t id);
-int             insert_new_guest(internal_guest* g);
-int             remove_guest(internal_guest* g);
+int             insert_new_guest(internal_guest *g);
+int             remove_guest(internal_guest *g);
 
 void guest_list_lock(void);
 void guest_list_unlock(void);
-void guest_vcpu_read_lock(internal_guest* g);
-void guest_vcpu_read_unlock(internal_guest* g);
-void guest_vcpu_write_lock(internal_guest* g);
-void guest_vcpu_write_unlock(internal_guest* g);
+void guest_vcpu_read_lock(internal_guest *g);
+void guest_vcpu_read_unlock(internal_guest *g);
+void guest_vcpu_write_lock(internal_guest *g);
+void guest_vcpu_write_unlock(internal_guest *g);
 
 struct internal_breakpoint {
     // Breakpoints can be set on either guest virtual of phyiscal addresses.
@@ -56,11 +56,11 @@ struct internal_breakpoint {
 
 internal_breakpoint* find_breakpoint_by_gpa(internal_guest *g, gpa_t guest_addr);
 internal_breakpoint* find_breakpoint_by_gva(internal_guest *g, gva_t guest_addr);
-void insert_breakpoint(internal_guest *g, internal_breakpoint* bp);
-void remove_breakpoint(internal_guest *g, internal_breakpoint* bp);
+void insert_breakpoint(internal_guest *g, internal_breakpoint *bp);
+void remove_breakpoint(internal_guest *g, internal_breakpoint *bp);
 void destroy_all_breakpoints(internal_guest *g); // will be called upon guest destruction
 
-enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED, VCPU_STATE_DESTROYED} typedef vcpu_state;
+enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED, VCPU_STATE_DESTROYED, VCPU_STATE_SINGLESTEP} typedef vcpu_state;
 
 struct internal_vcpu {
     uint64_t                    id;
@@ -70,10 +70,10 @@ struct internal_vcpu {
 } typedef internal_vcpu;
 
 // Functions assume guest_lock to be locked.
-internal_vcpu* 	map_vcpu_id_to_vcpu(uint64_t id, internal_guest* g);
-int             insert_new_vcpu(internal_vcpu* vcpu, internal_guest* g);
-int             remove_vcpu(internal_vcpu* vcpu, internal_guest* g);
-void            for_every_vcpu(internal_guest* g, void(*callback)(internal_vcpu*, void*), void* arg);
+internal_vcpu* 	map_vcpu_id_to_vcpu(uint64_t id, internal_guest *g);
+int             insert_new_vcpu(internal_vcpu* vcpu, internal_guest *g);
+int             remove_vcpu(internal_vcpu *vcpu, internal_guest *g);
+void            for_every_vcpu(internal_guest *g, void(*callback)(internal_vcpu*, void*), void *arg);
 
 // An abstraction for all functions provided by an hypervisor implementation.
 struct internal_hyperkraken_ops {
@@ -106,7 +106,7 @@ struct internal_hyperkraken_ops {
     int         (*singlestep)(internal_guest* g, internal_vcpu* vcpu);
 
     // I/O handlers
-    void        (*handle_mmio)(internal_vcpu*, uint64_t);
+    void        (*handle_mmio)(internal_vcpu*, gpa_t, int);
 } typedef internal_hyperkraken_ops;
 
 extern internal_hyperkraken_ops hyperkraken_ops;

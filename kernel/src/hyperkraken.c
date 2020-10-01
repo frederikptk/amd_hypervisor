@@ -14,7 +14,7 @@ static int __init hyperkraken_init(void) {
 	printk(DBG "Loaded HYPERKRAKEN kernel module\n");
 
     // Detect on which platform HYPERKRAKEN is running on.
-    //if (svm_check_support()) // TODO: remove comment
+    if (svm_check_support())
         init_svm_hyperkraken_ops();
 
     // If we are on no supported platform, unload the module

@@ -18,7 +18,7 @@
 #define EXCEPTION_NP        0xb
 #define EXCEPTION_SS        0xc
 #define EXCEPTION_GP        0xd
-#define EXCEPTION_PF        0xr
+#define EXCEPTION_PF        0xe
 #define EXCEPTION_MF        0x10
 #define EXCEPTION_AC        0x11
 #define EXCEPTION_MC        0x12
@@ -30,9 +30,8 @@
 // I/O ports
 #define MAX_NUM_IO_PORTS    0x10000
 
-extern void (*x86_io_port_handlers[MAX_NUM_IO_PORTS])(int, uint32_t, uint16_t, uint32_t*); // TODO: change void* to handler function type
+extern void (*x86_io_port_handlers[MAX_NUM_IO_PORTS])(int, uint32_t, uint16_t, uint32_t*);
 
-int x86_handle_io(int in, uint32_t op_size, uint16_t port, uint32_t* eax); // returns the result of eax
+int x86_handle_io(int in, uint32_t op_size, uint16_t port, uint32_t *eax); // returns the result of eax
 
-//TODO: implement these
-void x86_handle_mmio(internal_vcpu *vcpu, uint64_t phys_addr, void *data, uint32_t len, int is_write);
+void x86_handle_mmio(internal_vcpu *vcpu, gpa_t phys_guest, int is_write);

@@ -137,12 +137,22 @@ void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
 				svm_flush_tlb_by_asid(svm_vcpu->vcpu_vmcb);
 			}
 			break;
-		case VMEXIT_EXCP_BASE + EXCEPTION_DB:
+		case VMEXIT_EXCP_BASE ... (VMEXIT_EXCP_BASE + 32):
+			// Reflect all exceptions in which we are not interested in
+
 			// Singlestepping
-			break;
-		case VMEXIT_EXCP_BASE + EXCEPTION_BP:
+			if (svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_EXCP_BASE + EXCEPTION_DB) {
+				if (vcpu->state == VCPU_STATE_SINGLESTEP) {
+					vcpu->state = VCPU_STATE_PAUSED;
+				}
+			}
+
 			// Breakpoint handling
-			svm_handle_breakpoint(g, vcpu);
+			if (svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_EXCP_BASE + EXCEPTION_BP) {
+				if (!svm_handle_breakpoint(g, vcpu)) break;
+			}
+
+			svm_reflect_exception(vcpu);
 			break;
 		case VMEXIT_MSR:
 			// MSR access handling
@@ -154,6 +164,7 @@ void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
 			break;
 		case VMEXIT_IOIO:
 			svm_handle_io(vcpu);
+			svm_forward_rip(vcpu);
 			break;
 		case VMEXIT_INVD:
 		case VMEXIT_SHUTDOWN:
@@ -168,8 +179,8 @@ void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
 		case VMEXIT_INVLPGA:
 		case VMEXIT_INVLPGB:
 			// Skip these instructions and generate a #UD in the guest.
-			svm_forward_rip(vcpu);
 			svm_inject_event(vcpu, EVENT_INJECT_TYPE_EXCEPTION, EXCEPTION_UD, 0);
+			svm_forward_rip(vcpu);
 			break;
 		default:
 			printk(DBG "Unknown exit code: 0x%llx, exitinfo1: 0x%llx, exitinfo2: 0x%llx\n", svm_vcpu->vcpu_vmcb->exitcode, svm_vcpu->vcpu_vmcb->exitinfo1, svm_vcpu->vcpu_vmcb->exitinfo2);
@@ -261,7 +272,8 @@ void svm_forward_rip(internal_vcpu *vcpu) {
 	svm_internal_vcpu 			*svm_vcpu;
 
 	svm_vcpu = to_svm_vcpu(vcpu);
-	svm_vcpu->vcpu_vmcb->rip = svm_vcpu->vcpu_vmcb->next_rip;
+	svm_vcpu->vcpu_vmcb->rip += svm_vcpu->vcpu_vmcb->insn_len;
+	svm_vcpu->vcpu_vmcb->insn_len = 0;
 }
 
 int svm_set_msrpm_permission(uint8_t *msr_permission_map, uint32_t msr, int read, int write) {
@@ -335,5 +347,72 @@ void svm_handle_io(internal_vcpu *vcpu) {
 
 	x86_handle_io(in, op_size, port, &eax);
 	if (in) svm_vcpu->vcpu_vmcb->rax = eax;
+	svm_forward_rip(vcpu);
+}
+
+void svm_reflect_exception(internal_vcpu *vcpu) {
+	svm_internal_vcpu 			*svm_vcpu;
+	uint32_t					vector;
+	uint32_t					errorcode;
+
+	svm_vcpu 	= to_svm_vcpu(vcpu);
+	vector 		= svm_vcpu->vcpu_vmcb->exitcode - VMEXIT_EXCP_BASE;
+	errorcode 	= 0;
+
+	switch (vector) {
+		case EXCEPTION_DE  : 
+			break;
+		case EXCEPTION_DB  : 
+			break;
+		case EXCEPTION_NMI : 
+			break;
+		case EXCEPTION_BP  : 
+			break;
+		case EXCEPTION_OF  : 
+			break;
+		case EXCEPTION_BR  : 
+			break;
+		case EXCEPTION_UD  : 
+			break;
+		case EXCEPTION_NM  : 
+			break;
+		case EXCEPTION_DF  : 
+			break;
+		case EXCEPTION_TS  : 
+			// TODO: None?
+			errorcode = svm_vcpu->vcpu_vmcb->exitinfo1;
+			break;
+		case EXCEPTION_NP  : 
+			errorcode = svm_vcpu->vcpu_vmcb->exitinfo1;
+			break;
+		case EXCEPTION_SS  :
+			errorcode = svm_vcpu->vcpu_vmcb->exitinfo1; 
+			break;
+		case EXCEPTION_GP  : 
+			errorcode = svm_vcpu->vcpu_vmcb->exitinfo1;
+			break;
+		case EXCEPTION_PF  : 
+			errorcode = svm_vcpu->vcpu_vmcb->exitinfo1;
+			// Intercept is tested before CR2 in the guest is written.
+			svm_vcpu->vcpu_vmcb->cr2 = svm_vcpu->vcpu_vmcb->exitinfo2;
+			break;
+		case EXCEPTION_MF  : 
+			break;
+		case EXCEPTION_AC  : 
+			errorcode = 0;
+			break;
+		case EXCEPTION_MC  : 
+			break;
+		case EXCEPTION_XF  : 
+			break;
+		case EXCEPTION_HV  : 
+			break;
+		case EXCEPTION_VC  : 
+			break;
+		case EXCEPTION_SX  : 
+			break;
+	}
+
+	svm_inject_event(vcpu, EVENT_INJECT_TYPE_EXCEPTION, vector, errorcode);
 	svm_forward_rip(vcpu);
 }
