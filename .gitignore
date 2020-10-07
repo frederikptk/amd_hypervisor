@@ -12,3 +12,4 @@ tests/fuzz/build
 tests/output
 tmp
 tmp/*
+build

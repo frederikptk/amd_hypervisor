@@ -78,7 +78,6 @@ In order to build HYPERKRAKEN, clone the repository and execute:
  - guest virtual to guest phyiscal address
  - ASID generation
  - removal of unnecessary TEST_PTR calls
- - change pointers to be like in the Linux kernel
 
  - All exitcodes and instruction intercept definitions
  - MSR intercept handling
@@ -93,6 +92,7 @@ In order to build HYPERKRAKEN, clone the repository and execute:
  - Breakpoints
  - Event injection
  - VMCB state caching
+  - change pointers to be like in the Linux kernel
 
 ## IDEAS
  - converage-guided fuzzing with libfuzzer: User breakpoints & shared page in kernel

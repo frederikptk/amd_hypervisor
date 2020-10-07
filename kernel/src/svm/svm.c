@@ -241,7 +241,8 @@ int svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g) {
 	TEST_PTR(svm_vcpu->host_vmcb, vmcb*,, ERROR)
 
 	if (vcpu != NULL) {
-		on_each_cpu((void*)svm_run_vcpu_internal, vcpu, 1);
+		while (svm_vcpu->vcpu_vmcb->exitcode == 0 || svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF)
+			on_each_cpu((void*)svm_run_vcpu_internal, vcpu, 1);
 
 		svm_handle_vmexit(vcpu, g);
 	
