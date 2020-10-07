@@ -25,6 +25,7 @@ _start:
 
 	# create a first stack for our C environment
  	lea esp, sp_top
+	sub esp, 4
 
 _enter_longmode:
 	# steps to do in order to switch to long mode:
@@ -38,6 +39,8 @@ _enter_longmode:
 	mov eax, cr0
 	and eax, 0x7FFFFFFF
 	mov cr0, eax
+	#mov eax, 0x2008
+	#mov dword ptr[eax], 0x90
 	
 	# setup initial identity paging
 	call create_mapping_32

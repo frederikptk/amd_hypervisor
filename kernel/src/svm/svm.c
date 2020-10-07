@@ -223,6 +223,8 @@ void svm_run_vcpu_internal(void *info) {
 		
 		vcpu->state = VCPU_STATE_PAUSED;
 
+		if (svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_INVALID) vcpu->state = VCPU_STATE_FAILED;
+
 		asm volatile ("stgi");
 
 		efer = msr_rdmsr(MSR_EFER);
@@ -233,6 +235,7 @@ void svm_run_vcpu_internal(void *info) {
 
 int svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g) {
 	svm_internal_vcpu 			*svm_vcpu;
+	int							i = 0;
 
 	TEST_PTR(vcpu, internal_vcpu*,, ERROR)
 	svm_vcpu = to_svm_vcpu(vcpu);
@@ -241,10 +244,11 @@ int svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g) {
 	TEST_PTR(svm_vcpu->host_vmcb, vmcb*,, ERROR)
 
 	if (vcpu != NULL) {
-		while (svm_vcpu->vcpu_vmcb->exitcode == 0 || svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF)
+		while ((vcpu->state == VCPU_STATE_CREATED || svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF) && vcpu->state != VCPU_STATE_FAILED && i < 3) {
 			on_each_cpu((void*)svm_run_vcpu_internal, vcpu, 1);
-
-		svm_handle_vmexit(vcpu, g);
+			svm_handle_vmexit(vcpu, g);
+			i++;
+		}
 	
 		return 0;
 	} else {

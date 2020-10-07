@@ -243,12 +243,12 @@ void svm_set_memory_region(internal_guest *g, internal_memory_region *memory_reg
 uint64_t svm_map_page_attributes_to_arch(uint64_t attrib) {
 	uint64_t 	ret = 0;
 
-	if ((attrib & ~PAGE_ATTRIB_WRITE) != 0) 	ret |= _PAGE_RW;
-	if ((attrib & ~PAGE_ATTRIB_EXEC) == 0) 		ret |= _PAGE_NX;
-	if ((attrib & ~PAGE_ATTRIB_PRESENT) != 0) 	ret |= _PAGE_PRESENT;
-	if ((attrib & ~PAGE_ATTRIB_DIRTY) != 0) 	ret |= _PAGE_DIRTY;
-	if ((attrib & ~PAGE_ATTRIB_ACCESSED) != 0) 	ret |= _PAGE_ACCESSED;
-	if ((attrib & ~PAGE_ATTRIB_HUGE) != 0) 		ret |= _PAGE_SPECIAL;
+	if ((attrib & PAGE_ATTRIB_WRITE) != 0) 		ret |= _PAGE_RW;
+	if ((attrib & PAGE_ATTRIB_EXEC) == 0) 		ret |= _PAGE_NX;
+	if ((attrib & PAGE_ATTRIB_PRESENT) != 0) 	ret |= _PAGE_PRESENT;
+	if ((attrib & PAGE_ATTRIB_DIRTY) != 0) 		ret |= _PAGE_DIRTY;
+	if ((attrib & PAGE_ATTRIB_ACCESSED) != 0) 	ret |= _PAGE_ACCESSED;
+	if ((attrib & PAGE_ATTRIB_HUGE) != 0) 		ret |= _PAGE_SPECIAL;
 	
 	// For AMD SVM, a nested page always has to be a user page
 	ret |= _PAGE_USER;
@@ -261,14 +261,14 @@ uint64_t svm_map_arch_to_page_attributes(uint64_t attrib) {
 
 	// On x86, a page is always readable
 	ret |= PAGE_ATTRIB_READ;
-	
-	if ((attrib & ~_PAGE_RW) != 0) 			ret |= PAGE_ATTRIB_WRITE;
-	if ((attrib & ~_PAGE_NX) == 0) 			ret |= PAGE_ATTRIB_EXEC;
-	if ((attrib & ~_PAGE_PRESENT) != 0) 	ret |= PAGE_ATTRIB_PRESENT;
-	if ((attrib & ~_PAGE_DIRTY) != 0) 		ret |= PAGE_ATTRIB_DIRTY;
-	if ((attrib & ~_PAGE_ACCESSED) != 0)	ret |= PAGE_ATTRIB_ACCESSED;
-	if ((attrib & ~_PAGE_USER) != 0) 		ret |= PAGE_ATTRIB_USER;
-	if ((attrib & ~_PAGE_SPECIAL) != 0)		ret |= PAGE_ATTRIB_HUGE;
+
+	if ((attrib & _PAGE_RW) != 0) 			ret |= PAGE_ATTRIB_WRITE;
+	if ((attrib & _PAGE_NX) == 0) 			ret |= PAGE_ATTRIB_EXEC;
+	if ((attrib & _PAGE_PRESENT) != 0) 		ret |= PAGE_ATTRIB_PRESENT;
+	if ((attrib & _PAGE_DIRTY) != 0) 		ret |= PAGE_ATTRIB_DIRTY;
+	if ((attrib & _PAGE_ACCESSED) != 0)		ret |= PAGE_ATTRIB_ACCESSED;
+	if ((attrib & _PAGE_USER) != 0) 		ret |= PAGE_ATTRIB_USER;
+	if ((attrib & _PAGE_SPECIAL) != 0)		ret |= PAGE_ATTRIB_HUGE;
 
 	return ret;
 }

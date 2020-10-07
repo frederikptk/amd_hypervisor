@@ -84,8 +84,9 @@ int main(int argc, char** argv) {
             region.guest_addr		= phdr->p_vaddr;
             region.size				= phdr->p_memsz;
             region.is_mmio			= 0;
+			region.is_cow			= 0;
 
-            printf("Mapping file offset 0x%lx to: 0x%lx\n", phdr->p_offset, phdr->p_vaddr);
+            printf("Mapping file offset 0x%x to: 0x%x, len: 0x%x\n", phdr->p_offset, phdr->p_vaddr, phdr->p_memsz);
 
             TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_SET_MEMORY_REGION, &region))
 		}

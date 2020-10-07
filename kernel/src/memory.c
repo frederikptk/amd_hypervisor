@@ -22,6 +22,8 @@ int map_user_memory(internal_mmu* m, hpa_t *base, gpa_t phys_guest, hva_t virt_u
 
 	printk(DBG "map_user_memory\n");
 
+	err = 0;
+
 	mmap_read_lock(current->mm);
 
 	vma = find_vma(current->mm, virt_user);
@@ -39,11 +41,12 @@ int map_user_memory(internal_mmu* m, hpa_t *base, gpa_t phys_guest, hva_t virt_u
 		goto ret;
 	}
 
-	// TODO: error handling
-
 	printk(DBG "pinning user page: 0x%lx\n", (unsigned long)virt_user);
 	err = pin_user_pages(virt_user, 1, FOLL_LONGTERM | FOLL_WRITE | FOLL_FORCE, region->pages + idx, NULL);
+	// pin_user_pages returns the number of pages which were pinned
+	if (err != 1) goto ret;
 
+	printk(DBG "pa of user page: 0x%lx\n", (unsigned long)(page_to_pfn(region->pages[idx]) << 12));
 	err = map_nested_pages_to(m, base, phys_guest, page_to_pfn(region->pages[idx]) << 12);
 
 ret:
@@ -132,17 +135,19 @@ int handle_pagefault(internal_guest *g, internal_vcpu *vcpu, hpa_t *base, gpa_t 
 	// It the region is not a MMIO region, simply do lazy faulting and "swap in" the page.
 	if (!region->is_mmio) {
 		printk(DBG "no MMIO\n");
-		if (region->is_cow) {
-			if (reason & PAGEFAULT_NON_PRESENT) {
-				map_user_memory(g->mmu, base, phys_guest, region->userspace_addr + (phys_guest - region->guest_addr), region);
+		
+		if (reason & PAGEFAULT_NON_PRESENT) {
+			if (map_user_memory(g->mmu, base, phys_guest & PAGE_TABLE_MASK, (region->userspace_addr + (phys_guest - region->guest_addr)) & PAGE_TABLE_MASK, region)) {
+				printk(DBG "map_user_memory error\n");
 			}
+		}
+
+		if (region->is_cow) {
 			// Directly check afterwards, if we also pagefaulted on a CoW page
-			if ((reason & PAGEFAULT_WRITE) && region->is_cow) {
+			if (reason & PAGEFAULT_WRITE) {
+				mmu_prepare_page_for_cow(g->mmu, phys_guest, region);
 				mmu_do_page_cow(g->mmu, phys_guest, region);
 			}
-
-		} else {
-			
 		}
 	}
 
@@ -236,6 +241,8 @@ int map_nested_pages_to(internal_mmu *m, hpa_t *base, gpa_t phys_guest, hpa_t ph
 		printk(DBG "level: 0x%lx\n", (unsigned long)level);
 
         if (level == 1) {
+			printk(DBG "level 1 *current_pte: 0x%lx\n", (unsigned long)*current_pte);
+
              *current_pte = phys_host | hyperkraken_ops.map_page_attributes_to_arch(PAGE_ATTRIB_READ | 
 																			PAGE_ATTRIB_WRITE | 
 																			PAGE_ATTRIB_EXEC | 
@@ -275,7 +282,7 @@ int set_pagetable_attributes(internal_mmu *m, gpa_t phys_guest, uint64_t attribu
     return -EFAULT;
 }
 
-int get_pagetable_attributes(internal_mmu *m, gpa_t phys_guest) {
+uint64_t get_pagetable_attributes(internal_mmu *m, gpa_t phys_guest) {
 	unsigned int    level;
     hpa_t          	*current_pte;
 
@@ -285,7 +292,7 @@ int get_pagetable_attributes(internal_mmu *m, gpa_t phys_guest) {
         }
     }
 
-    return -EFAULT;
+    return -1;
 }
 
 int  write_memory(internal_mmu *m, gpa_t phys_guest, void *src, size_t sz) {
