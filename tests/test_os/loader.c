@@ -122,7 +122,10 @@ int main(int argc, char** argv) {
 	printf("Result r13: 0x%lx\n", regs.r13);
 	printf("Result r14: 0x%lx\n", regs.r14);
 	printf("Result r15: 0x%lx\n", regs.r15);
-
+	printf("Result gdt selector: 0x%lx\n", regs.gdtr.selector);
+	printf("Result gdt attrib: 0x%lx\n", regs.gdtr.attrib);
+	printf("Result gdt limit: 0x%lx\n", regs.gdtr.limit);
+	printf("Result gdt base: 0x%lx\n", regs.gdtr.base);
     // Cleanup
     TEST_IOCTL_RET(ioctl(ctl_fd, HYPERKRAKEN_IOCTL_DESTROY_GUEST, &guest_id))
 	close(ctl_fd);

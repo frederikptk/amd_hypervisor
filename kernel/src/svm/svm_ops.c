@@ -53,6 +53,22 @@ void* svm_create_arch_internal_guest(internal_guest *g) {
 	return (void*)svm_g;
 }
 
+void* svm_simple_copy_arch_internal_guest(internal_guest *g, internal_guest *copy_g) {
+	svm_internal_guest	*svm_g;
+	svm_internal_guest	*copy_svm_g;
+
+	TEST_PTR(g, internal_guest*,, NULL)
+	svm_g = to_svm_guest(g);
+	copy_svm_g = (svm_internal_guest*) kzalloc(sizeof(internal_guest), GFP_KERNEL);
+
+	copy_svm_g->nested_pagetables = copy_g->mmu->base;
+
+	copy_svm_g->msr_permission_map = (uint8_t*) kzalloc(MSRPM_SIZE, GFP_KERNEL);
+	memcpy(copy_svm_g->msr_permission_map, svm_g->msr_permission_map, MSRPM_SIZE);
+
+	return (void*)copy_svm_g;
+}
+
 void svm_destroy_arch_internal_guest(internal_guest *g) {
 	svm_internal_guest		*svm_g;
 
@@ -84,13 +100,32 @@ void* svm_create_arch_internal_vcpu(internal_guest *g) {
 	svm_vcpu->host_vmcb = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	svm_vcpu->vcpu_regs = kzalloc(sizeof(gp_regs), GFP_KERNEL);
 	
-	TEST_PTR(svm_vcpu->vcpu_vmcb, vmcb*, kfree(svm_vcpu), NULL);
-	TEST_PTR(svm_vcpu->host_vmcb, vmcb*, kfree(svm_vcpu); kfree(svm_vcpu->vcpu_vmcb), NULL);
+	TEST_PTR(svm_vcpu->vcpu_vmcb, internal_vmcb*, kfree(svm_vcpu), NULL);
+	TEST_PTR(svm_vcpu->host_vmcb, internal_vmcb*, kfree(svm_vcpu); kfree(svm_vcpu->vcpu_vmcb), NULL);
 	TEST_PTR(svm_vcpu->vcpu_regs, gp_regs*, kfree(svm_vcpu); kfree(svm_vcpu->vcpu_vmcb); kfree(svm_vcpu->host_vmcb), NULL);
 
 	svm_reset_vcpu(svm_vcpu, g);
 
 	return (void*)svm_vcpu;
+}
+
+void* svm_simple_copy_arch_internal_vcpu(internal_guest *copy_g, internal_vcpu *vcpu, internal_vcpu* copy_vcpu) {
+	svm_internal_guest	*copy_svm_g;
+	svm_internal_vcpu	*copy_svm_vcpu;
+	svm_internal_vcpu	*svm_vcpu;
+
+	TEST_PTR(copy_g, internal_guest*,, NULL)
+	copy_svm_g = to_svm_guest(copy_g);
+	svm_vcpu = to_svm_vcpu(vcpu);
+	TEST_PTR(copy_svm_g, svm_internal_guest*,, NULL)
+	TEST_PTR(svm_vcpu, svm_internal_vcpu*,, NULL)
+
+	copy_svm_vcpu = (svm_internal_vcpu*)svm_create_arch_internal_vcpu(copy_g);
+	
+	memcpy(copy_svm_vcpu->vcpu_vmcb, svm_vcpu->vcpu_vmcb, PAGE_SIZE);
+	memcpy(copy_svm_vcpu->vcpu_regs, svm_vcpu->vcpu_regs, PAGE_SIZE);
+
+	return (void*)copy_svm_vcpu;
 }
 
 int svm_destroy_arch_internal_vcpu(internal_vcpu *vcpu) {
@@ -120,7 +155,7 @@ void svm_set_vcpu_registers(internal_vcpu *vcpu, user_arg_registers *regs) {
 	svm_vcpu = to_svm_vcpu(vcpu);
 	TEST_PTR(svm_vcpu, svm_internal_vcpu*,,);
 
-	TEST_PTR(svm_vcpu->vcpu_vmcb, vmcb*,,);
+	TEST_PTR(svm_vcpu->vcpu_vmcb, internal_vmcb*,,);
 	TEST_PTR(svm_vcpu->vcpu_regs, gp_regs*,,);
 	
 	svm_vcpu->vcpu_vmcb->rax = regs->rax;
@@ -186,7 +221,7 @@ void svm_get_vcpu_registers(internal_vcpu *vcpu, user_arg_registers  *regs) {
 	svm_vcpu = to_svm_vcpu(vcpu);
 	TEST_PTR(svm_vcpu, svm_internal_vcpu*,,);
 
-	TEST_PTR(svm_vcpu->vcpu_vmcb, vmcb*,,);
+	TEST_PTR(svm_vcpu->vcpu_vmcb, internal_vmcb*,,);
 	TEST_PTR(svm_vcpu->vcpu_regs, gp_regs*,,);
 	
 	regs->rax = svm_vcpu->vcpu_vmcb->rax;
@@ -317,11 +352,7 @@ hpa_t* svm_mmu_walk_init(internal_mmu *m, gpa_t phys_guest, unsigned int *curren
 	return &(m->base[vpn]);
 }
 
-gpa_t svm_mmu_gva_to_gpa(internal_guest *g, internal_vcpu *vcpu, gva_t virt_guest) {
-	svm_internal_vcpu* svm_vcpu;
-
-	svm_vcpu = to_svm_vcpu(vcpu);
-
+gpa_t svm_mmu_gva_to_gpa(internal_guest *g, gva_t virt_guest) {
 	// TODO
 
 	// First, get the cr3 register of the guest: use the first VCPU
@@ -333,7 +364,7 @@ gpa_t svm_mmu_gva_to_gpa(internal_guest *g, internal_vcpu *vcpu, gva_t virt_gues
 	return 0;
 }
 
-int svm_add_breakpoint_p(internal_guest *g, internal_vcpu *vcpu, gpa_t guest_addr) {
+int svm_add_breakpoint_p(internal_guest *g, gpa_t guest_addr) {
 	uint8_t 				old_byte;
 	uint8_t 				new_byte;
 	internal_breakpoint 	*bp;
@@ -357,11 +388,13 @@ int svm_add_breakpoint_p(internal_guest *g, internal_vcpu *vcpu, gpa_t guest_add
 
 	insert_breakpoint(g, bp);
 
+	g->breakpoints_cnt++;
+
 err:
 	return ret;
 }
 
-int svm_add_breakpoint_v(internal_guest *g, internal_vcpu *vcpu, gva_t guest_addr) {
+int svm_add_breakpoint_v(internal_guest *g, gva_t guest_addr) {
 	uint8_t 				old_byte;
 	uint8_t 				new_byte;
 	internal_breakpoint 	*bp;
@@ -369,7 +402,7 @@ int svm_add_breakpoint_v(internal_guest *g, internal_vcpu *vcpu, gva_t guest_add
 	int						ret;
 
 	ret = 0;
-	phys_guest = svm_mmu_gva_to_gpa(g, vcpu, guest_addr);
+	phys_guest = svm_mmu_gva_to_gpa(g, guest_addr);
 
 	ret = read_memory(g->mmu, phys_guest, &old_byte, 1);
 	if (ret) goto err;
@@ -389,6 +422,8 @@ int svm_add_breakpoint_v(internal_guest *g, internal_vcpu *vcpu, gva_t guest_add
 	bp->guest_addr_v = guest_addr;
 
 	insert_breakpoint(g, bp);
+
+	g->breakpoints_cnt++;
 
 err:
 	return ret;
@@ -444,7 +479,7 @@ int svm_handle_breakpoint(internal_guest *g, internal_vcpu *vcpu) {
 	// If this is the case, insert the virtual address of the breakpoint (RIP)
 	// into the internal_breakpoint structure.
 	if (bp == NULL) {
-		phys_guest = svm_mmu_gva_to_gpa(g, vcpu, virt_guest);
+		phys_guest = svm_mmu_gva_to_gpa(g, virt_guest);
 		bp = find_breakpoint_by_gpa(g, phys_guest);
 
 		// Only happens if the guest uses internally the int3 instruction.
@@ -459,7 +494,7 @@ int svm_handle_breakpoint(internal_guest *g, internal_vcpu *vcpu) {
 	} else {
 		// Look if we filled in the physical address of a breakpoint.
 		if (bp->guest_addr_p == 0) {
-			phys_guest = svm_mmu_gva_to_gpa(g, vcpu, virt_guest);
+			phys_guest = svm_mmu_gva_to_gpa(g, virt_guest);
 			bp->guest_addr_p = phys_guest;
 		}
 	}
@@ -484,27 +519,31 @@ err:
 
 // This function will be called if AMD SVM support is detected
 void init_svm_hyperkraken_ops(void) {
-	hyperkraken_ops.run_vcpu 					= svm_run_vcpu;
-    hyperkraken_ops.create_arch_internal_vcpu 	= svm_create_arch_internal_vcpu,
-	hyperkraken_ops.destroy_arch_internal_vcpu 	= svm_destroy_arch_internal_vcpu,
-    hyperkraken_ops.create_arch_internal_guest 	= svm_create_arch_internal_guest;
-    hyperkraken_ops.destroy_arch_internal_guest = svm_destroy_arch_internal_guest;
-	hyperkraken_ops.set_vcpu_registers 			= svm_set_vcpu_registers;
-    hyperkraken_ops.get_vcpu_registers 			= svm_get_vcpu_registers;
-    hyperkraken_ops.set_memory_region 			= svm_set_memory_region;
-	hyperkraken_ops.map_page_attributes_to_arch	= svm_map_page_attributes_to_arch;
-	hyperkraken_ops.map_arch_to_page_attributes	= svm_map_arch_to_page_attributes;
-	hyperkraken_ops.init_mmu					= svm_init_mmu;
-	hyperkraken_ops.destroy_mmu					= svm_destroy_mmu;
-	hyperkraken_ops.mmu_walk_available			= svm_mmu_walk_available;
-	hyperkraken_ops.mmu_walk_next				= svm_mmu_walk_next;
-	hyperkraken_ops.mmu_walk_init				= svm_mmu_walk_init;
-	hyperkraken_ops.mmu_gva_to_gpa				= svm_mmu_gva_to_gpa;
-	hyperkraken_ops.add_breakpoint_p			= svm_add_breakpoint_p;
-	hyperkraken_ops.add_breakpoint_v			= svm_add_breakpoint_v;
-	hyperkraken_ops.remove_breakpoint			= svm_remove_breakpoint;
-	hyperkraken_ops.singlestep					= svm_singlestep;
-	hyperkraken_ops.handle_mmio					= x86_handle_mmio;
+	hyperkraken_ops.run_vcpu 						= svm_run_vcpu;
+    hyperkraken_ops.create_arch_internal_vcpu 		= svm_create_arch_internal_vcpu;
+	hyperkraken_ops.simple_copy_arch_internal_vcpu 	= svm_simple_copy_arch_internal_vcpu;
+	hyperkraken_ops.destroy_arch_internal_vcpu 		= svm_destroy_arch_internal_vcpu,
+    hyperkraken_ops.create_arch_internal_guest 		= svm_create_arch_internal_guest;
+	hyperkraken_ops.simple_copy_arch_internal_guest = svm_simple_copy_arch_internal_guest;
+    hyperkraken_ops.destroy_arch_internal_guest 	= svm_destroy_arch_internal_guest;
+	hyperkraken_ops.set_vcpu_registers 				= svm_set_vcpu_registers;
+    hyperkraken_ops.get_vcpu_registers 				= svm_get_vcpu_registers;
+    hyperkraken_ops.set_memory_region 				= svm_set_memory_region;
+	hyperkraken_ops.map_page_attributes_to_arch		= svm_map_page_attributes_to_arch;
+	hyperkraken_ops.map_arch_to_page_attributes		= svm_map_arch_to_page_attributes;
+	hyperkraken_ops.init_mmu						= svm_init_mmu;
+	hyperkraken_ops.destroy_mmu						= svm_destroy_mmu;
+	hyperkraken_ops.mmu_walk_available				= svm_mmu_walk_available;
+	hyperkraken_ops.mmu_walk_next					= svm_mmu_walk_next;
+	hyperkraken_ops.mmu_walk_init					= svm_mmu_walk_init;
+	hyperkraken_ops.mmu_gva_to_gpa					= svm_mmu_gva_to_gpa;
+	hyperkraken_ops.add_breakpoint_p				= svm_add_breakpoint_p;
+	hyperkraken_ops.add_breakpoint_v				= svm_add_breakpoint_v;
+	hyperkraken_ops.remove_breakpoint				= svm_remove_breakpoint;
+	hyperkraken_ops.singlestep						= svm_singlestep;
+	hyperkraken_ops.handle_mmio						= x86_handle_mmio;
+	hyperkraken_ops.register_kvm_record_handler 	= svm_register_kvm_record_handler;
+	hyperkraken_ops.deregister_kvm_record_handler 	= svm_deregister_kvm_record_handler;
 
 	hyperkraken_initialized = 1;
 }

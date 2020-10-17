@@ -11,7 +11,9 @@
 #include <linux/ioctl.h>
 
 #define PROC_PATH				"hyperkraken_ctl"
+#define FUZZ_PATH				"hyperkraken_fuzz"
 #define HYPERKRAKEN_PROC_PATH				"/proc/" PROC_PATH
+#define HYPERKRAKEN_FUZZ_PATH				"/proc/" FUZZ_PATH
 
 // We define the structs as packed to assure a certain struct layout.
 struct __attribute__ ((__packed__)) user_arg_segment {
@@ -89,14 +91,35 @@ struct __attribute__ ((__packed__)) user_memory_region {
 	int                 is_cow;
 } typedef user_memory_region;
 
-#define ERROR				-1
+struct __attribute__ ((__packed__)) user_breakpoints {
+	uint64_t			guest_id;
+	int					virt;
+	uint64_t			sz;
+	void*				addr;
+} typedef user_breakpoints;
+
+
+#define ERROR			-1
 #define SUCCESS			0
 
+#define MAX_BREAKPOINTS_LIST_LEN			0x10000
+
+#define GUEST_CREATE_NEW		0
+#define GUEST_CREATE_KVM_REC	1
+
+// IOCTLs for normal hypervisor usage
 #define HYPERKRAKEN_IOCTL_MAGIC					0xAA
-#define HYPERKRAKEN_IOCTL_CREATE_GUEST			_IOW  (HYPERKRAKEN_IOCTL_MAGIC, 0x0, uint64_t)
+#define HYPERKRAKEN_IOCTL_CREATE_GUEST			_IOWR (HYPERKRAKEN_IOCTL_MAGIC, 0x0, uint64_t)
 #define HYPERKRAKEN_IOCTL_CREATE_VCPU			_IOWR (HYPERKRAKEN_IOCTL_MAGIC, 0x1, user_vcpu_guest_id)
 #define HYPERKRAKEN_IOCTL_SET_REGISTERS			_IOWR (HYPERKRAKEN_IOCTL_MAGIC, 0x2, user_arg_registers)
 #define HYPERKRAKEN_IOCTL_GET_REGISTERS			_IOWR (HYPERKRAKEN_IOCTL_MAGIC, 0x3, user_arg_registers)
 #define HYPERKRAKEN_IOCTL_VCPU_RUN				_IOR  (HYPERKRAKEN_IOCTL_MAGIC, 0x4, user_vcpu_guest_id)
 #define HYPERKRAKEN_IOCTL_DESTROY_GUEST			_IOR  (HYPERKRAKEN_IOCTL_MAGIC, 0x5, uint64_t)
 #define HYPERKRAKEN_SET_MEMORY_REGION			_IOR  (HYPERKRAKEN_IOCTL_MAGIC, 0x6, user_memory_region)
+
+// IOCTLs used for fuzzing
+#define HYPERKRAKEN_BEGIN_KVM_RECORD			_IO   (HYPERKRAKEN_IOCTL_MAGIC, 0x7)
+#define HYPERKRAKEN_END_KVM_RECORD				_IO   (HYPERKRAKEN_IOCTL_MAGIC, 0x8)
+#define HYPERKRAKEN_ROLLBACK					_IOR  (HYPERKRAKEN_IOCTL_MAGIC, 0x9, uint64_t)
+#define HYPERKRAKEN_SET_FUZZ_CNTR_REGION		_IOR  (HYPERKRAKEN_IOCTL_MAGIC, 0xA, user_memory_region)
+#define HYPERKRAKEN_SET_BREAKPOINTS				_IOR   (HYPERKRAKEN_IOCTL_MAGIC, 0xB, user_breakpoints)

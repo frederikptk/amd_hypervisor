@@ -16,9 +16,9 @@ find . -name \*.order -type f -delete
 echo "DONE"
 
 echo "################################"
-echo "      BUILD USERLAND TEST"
+echo "    BUILD USERLAND LOADER"
 echo "################################"
-clang -Wall -I./include -I./user/include user/src/main.c -o example
+clang -Wall -I./include -I./user/include user/src/load_qemu_state.c -o user/load_qemu_state
 
 echo "################################"
 echo "       BUILD FUZZ TESTS"

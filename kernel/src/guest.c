@@ -2,6 +2,7 @@
 #include <stddef.h>
 
 #include <linux/slab.h>
+#include <linux/highmem.h>
 
 internal_hyperkraken_ops        hyperkraken_ops;
 
@@ -32,30 +33,6 @@ void guest_vcpu_write_unlock(internal_guest *g) {
     up_write(&g->vcpu_lock);
 }
 
-void destroy_guest(internal_guest *g) {
-	if (g != NULL) {
-		// Destroy all VCPUs first.
-		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))hyperkraken_ops.destroy_arch_internal_vcpu, NULL);
-		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))remove_vcpu, g);
-		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))kfree, NULL);
-
-		// Destroy the MMU: pagetables, memory regions, internals
-		if (g->mmu != NULL) {
-			hyperkraken_ops.destroy_mmu(g->mmu);
-			mmu_destroy_all_memory_regions(g->mmu);
-			mmu_destroy_all_pagetables(g->mmu);
-			kfree(g->mmu);
-		}
-
-        destroy_all_breakpoints(g);
-
-		// Free all other pointers.
-		hyperkraken_ops.destroy_arch_internal_guest(g);
-		remove_guest(g);
-		kfree(g);
-	}
-}
-
 internal_guest* create_guest(void) {
 	internal_guest				*g;
 	internal_mmu				*mmu;
@@ -78,11 +55,115 @@ internal_guest* create_guest(void) {
 
 	init_rwsem(&g->vcpu_lock);
 
+    g->breakpoints_cnt = 0;
+
 	return g;
 
 err:
 	destroy_guest(g);
 	return NULL;
+}
+
+internal_guest* simple_copy_guest(internal_guest *g) {
+    unsigned int                i;
+    internal_guest				*copy_g;
+    internal_mmu				*copy_mmu;
+
+    if (g == NULL) return NULL;
+
+    // First, copy the guest structure.
+    copy_g = (internal_guest*)kmalloc(sizeof(internal_guest), GFP_KERNEL);
+	if (copy_g == NULL) goto err;
+
+	// Copy the MMU for the guest: only non-list members
+	copy_mmu = kmalloc(sizeof(internal_mmu), GFP_KERNEL);
+	if (copy_mmu == NULL) goto err;
+	hyperkraken_ops.init_mmu(copy_mmu);
+    copy_mmu->base = g->mmu->base;
+	copy_g->mmu = copy_mmu;
+
+	// Copy the arch-dependent structure for the guest
+	copy_g->arch_internal_guest = hyperkraken_ops.simple_copy_arch_internal_guest(g, copy_g);
+	if (copy_g->arch_internal_guest == NULL) goto err;
+
+	hash_init(copy_g->breakpoints);
+
+	init_rwsem(&copy_g->vcpu_lock);
+
+    // Next, copy the VCPUs.
+    for (i = 0; i < MAX_NUM_VCPUS; i++) {
+        if (g->vcpus[i] != NULL) {
+            copy_g->vcpus[i] = kmalloc(sizeof(internal_vcpu), GFP_KERNEL);
+            memcpy(copy_g->vcpus[i], g->vcpus[i], sizeof(internal_vcpu));
+            hyperkraken_ops.simple_copy_arch_internal_vcpu(copy_g, g->vcpus[i], copy_g->vcpus[i]);
+        }
+    }
+
+	return copy_g;
+
+err:
+	destroy_guest(copy_g);
+
+    return NULL;
+}
+
+void destroy_guest(internal_guest *g) {
+	if (g != NULL) {
+		// Destroy all VCPUs first.
+		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))hyperkraken_ops.destroy_arch_internal_vcpu, NULL);
+		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))remove_vcpu, g);
+		for_every_vcpu(g, (void(*)(internal_vcpu*, void*))kfree, NULL);
+
+		// Destroy the MMU: pagetables, memory regions, internals
+		if (g->mmu != NULL) {
+			hyperkraken_ops.destroy_mmu(g->mmu);
+			mmu_destroy_all_memory_regions(g->mmu);
+			mmu_destroy_all_pagetables(g->mmu);
+			kfree(g->mmu);
+		}
+
+        destroy_all_breakpoints(g);
+
+        // Destroy the fuzzing coverage mmap.
+        if (g->fuzzing_coverage != NULL) kfree(g->fuzzing_coverage);
+
+		// Free all other pointers.
+		hyperkraken_ops.destroy_arch_internal_guest(g);
+		remove_guest(g);
+		kfree(g);
+	}
+}
+
+void destroy_all_guests(void) {
+    unsigned int i;
+
+    for (i = 0; i < MAX_NUM_GUESTS; i++) {
+        if (g_guests[i] != NULL) {
+            destroy_guest(g_guests[i]);
+        }
+    }
+}
+
+internal_vcpu* create_vcpu(internal_guest *g) {
+    internal_vcpu   *vcpu;
+
+    vcpu = kmalloc(sizeof(internal_vcpu), GFP_KERNEL);
+    if (vcpu == NULL) return NULL;
+
+    vcpu->state = VCPU_STATE_CREATED;
+
+    vcpu->arch_internal_vcpu = hyperkraken_ops.create_arch_internal_vcpu(g);
+    if (vcpu->arch_internal_vcpu == NULL) {
+        kfree(vcpu);
+        return NULL;
+    }
+    
+    return vcpu;
+}
+
+void destroy_vcpu(internal_vcpu *vcpu) {
+    hyperkraken_ops.destroy_arch_internal_vcpu(vcpu);
+	kfree(vcpu);
 }
 
 internal_guest* map_guest_id_to_guest(uint64_t id) {
@@ -100,10 +181,19 @@ internal_guest* map_guest_id_to_guest(uint64_t id) {
 int insert_new_guest(internal_guest *g) {
     unsigned int i;
 
+    printk(DBG "insert\n");
+
     for (i = 0; i < MAX_NUM_GUESTS; i++) {
+        //printk(DBG "g_guests[i]: 0x%x\n", g_guests[i]);
+
         if (g_guests[i] == NULL) {
+            //printk(DBG "insert\n");
+
             g->id = i;
             g_guests[i] = g;
+
+            printk(DBG "insert\n");
+
             return 0;
         }
     }

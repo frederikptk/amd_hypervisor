@@ -5,8 +5,8 @@
 #include <hyperkraken_defs.h>
 
 struct svm_internal_vcpu {
-	vmcb*			vcpu_vmcb;
-	vmcb*			host_vmcb;
+	internal_vmcb*	vcpu_vmcb;
+	internal_vmcb*	host_vmcb;
 	gp_regs*		vcpu_regs;
 	uint64_t		host_fs_base;
 	uint64_t		host_gs_base;
@@ -30,6 +30,7 @@ struct svm_internal_guest {
 inline svm_internal_guest* to_svm_guest(internal_guest* g);
 inline svm_internal_vcpu*  to_svm_vcpu(internal_vcpu* g);
 
+// SVM-related functions
 void svm_handle_vmexit(internal_vcpu *current_vcpu, internal_guest *g);
 int  svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g);
 int  svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g);
@@ -41,5 +42,9 @@ void svm_handle_msr_access_write(internal_vcpu *vcpu);
 void svm_handle_msr_access_read(internal_vcpu *vcpu);
 void svm_handle_io(internal_vcpu *vcpu);
 void svm_reflect_exception(internal_vcpu *vcpu);
+
+// KVM-related functions
+void svm_register_kvm_record_handler(void);
+void svm_deregister_kvm_record_handler(void);
 
 extern void svm_run_vcpu_asm(unsigned long phys_addr_guest_vmcb, unsigned long phys_addr_host_vmcb, unsigned long saved_guest_regs_addr);

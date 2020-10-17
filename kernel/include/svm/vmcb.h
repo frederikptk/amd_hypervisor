@@ -15,7 +15,7 @@ struct __attribute__ ((__packed__)) segment {
 } typedef segment;
 
 // general VMCB structure (like in KVM)
-struct __attribute__ ((__packed__)) vmcb{
+struct __attribute__ ((__packed__)) internal_vmcb{
 	// Control area
 	uint32_t 	intercept_cr;
 	uint32_t 	intercept_dr;
@@ -99,8 +99,8 @@ struct __attribute__ ((__packed__)) vmcb{
 	uint64_t	br_to;
 	uint64_t	last_excp_from;
 	uint64_t	last_excp_to;
-} typedef vmcb;
-_Static_assert (sizeof(vmcb) == 0x698, "vmcb struct size false");
+} typedef internal_vmcb;
+_Static_assert (sizeof(internal_vmcb) == 0x698, "vmcb struct size false");
 
 // a struct representing the guest general purpose register state: these
 // will not be stored in the VMCB
@@ -138,15 +138,15 @@ struct __attribute__ ((__packed__)) gp_regs {
 } typedef gp_regs;
 
 // Intercept related
-#define INTERCEPT_MSR_PROT		(28 + 32) << 1
+/*
+#define INTERCEPT_MSR_PROT		((28 + 32) << 1)
 #define INTERCEPT_HLT			((uint64_t)1 << 24)
-#define INTERCEPT_VMRUN			((uint64_t)1 << 32)
+#define INTERCEPT_VMRUN			((uint64_t)1 << 32)*/
 
 // MSR intercept
 #define MSRPM_SIZE			0x1000 * 4
 
 // Intercept exit codes
-
 #define VMEXIT_READ_CR0      	0x00
 #define VMEXIT_READ_CR2      	0x02
 #define VMEXIT_READ_CR3      	0x03

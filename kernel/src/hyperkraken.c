@@ -23,12 +23,18 @@ static int __init hyperkraken_init(void) {
         return -1;
     }
 
+    // Initialize data structures
+    //memset(&g_guests[0], 0, sizeof(g_guests));
+
 	init_ctl_interface();
 	return 0;
 }
 
 static void __exit hyperkraken_exit(void) {
 	printk(DBG "Unloaded HYPERKRAKEN kernel module\n");
+
+    destroy_all_guests();
+
 	finit_ctl_interface();
 }
 

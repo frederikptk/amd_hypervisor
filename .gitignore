@@ -1,5 +1,6 @@
 kernel/hyperkraken.ko
 example
+load_qemu_state
 load_qcow2
 *.mod
 *.cmd
@@ -13,3 +14,5 @@ tests/output
 tmp
 tmp/*
 build
+linux_stub
+ubuntu.qcow2

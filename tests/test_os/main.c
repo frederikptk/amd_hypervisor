@@ -27,7 +27,7 @@ segment_descriptor gdt[] = {
     }
 };
 
-segment_descriptor* gdt_ptr = &gdt[0];
+descriptor_ptr gdt_ptr;
 
 struct __attribute__ ((__packed__)) idt_descriptor {
    uint16_t     base_addr_1;

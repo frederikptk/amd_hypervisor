@@ -19,6 +19,7 @@ typedef struct internal_mmu internal_mmu;
 #define MAX_NUM_MEM_REGIONS     128
 
 extern internal_guest*          g_guests[MAX_NUM_GUESTS];
+extern internal_guest           kvm_guest; // Created if we decided to trace a KVM guest
 
 struct internal_guest {
     uint64_t                    id;
@@ -27,12 +28,19 @@ struct internal_guest {
     internal_vcpu*              vcpus[MAX_NUM_VCPUS];
     struct rw_semaphore         vcpu_lock;
     internal_mmu*               mmu;
+    void*                       fuzzing_coverage;
+    uint64_t                    fuzzing_coverage_size;
     DECLARE_HASHTABLE           (breakpoints, 7); // uses virtual breakpoint addresses as keys
+    uint64_t                    breakpoints_cnt;
 } typedef internal_guest;
 
 // Functions assume guest_list_lock to be locked.
-void            destroy_guest(internal_guest *g);
 internal_guest* create_guest(void);
+internal_guest* simple_copy_guest(internal_guest *g);
+void            destroy_guest(internal_guest *g);
+void            destroy_all_guests(void);
+internal_vcpu*  create_vcpu(internal_guest *g);
+void            destroy_vcpu(internal_vcpu *vcpu);
 internal_guest* map_guest_id_to_guest(uint64_t id);
 int             insert_new_guest(internal_guest *g);
 int             remove_guest(internal_guest *g);
@@ -80,10 +88,12 @@ struct internal_hyperkraken_ops {
     // Managing guests/VCPUs
     int         (*run_vcpu)(internal_vcpu*, internal_guest*);
     void*       (*create_arch_internal_vcpu)(internal_guest*);
+    void*       (*simple_copy_arch_internal_vcpu)(internal_guest*, internal_vcpu*, internal_vcpu*);
     int         (*destroy_arch_internal_vcpu)(internal_vcpu*);
-    void*       (*create_arch_internal_guest) (internal_guest*);
-    void        (*destroy_arch_internal_guest)(internal_guest*);
 
+    void*       (*create_arch_internal_guest) (internal_guest*);
+    void*       (*simple_copy_arch_internal_guest)(internal_guest*, internal_guest*);
+    void        (*destroy_arch_internal_guest)(internal_guest*);
     // Managing guest/VCPU state
     void        (*set_vcpu_registers)(internal_vcpu*, user_arg_registers*);
     void        (*get_vcpu_registers)(internal_vcpu*, user_arg_registers*);
@@ -97,16 +107,20 @@ struct internal_hyperkraken_ops {
     int         (*mmu_walk_available) (hpa_t*, gpa_t, unsigned int*);
     hpa_t*      (*mmu_walk_next) (hpa_t*, gpa_t, unsigned int*);
     hpa_t*      (*mmu_walk_init) (internal_mmu*, gpa_t, unsigned int*);
-    gpa_t       (*mmu_gva_to_gpa) (internal_guest*, internal_vcpu*, gva_t);
+    gpa_t       (*mmu_gva_to_gpa) (internal_guest*, gva_t);
 
     // Breakpoints
-    int         (*add_breakpoint_p)(internal_guest*, internal_vcpu*, gpa_t);
-    int         (*add_breakpoint_v)(internal_guest*, internal_vcpu*, gva_t);
+    int         (*add_breakpoint_p)(internal_guest*, gpa_t);
+    int         (*add_breakpoint_v)(internal_guest*, gva_t);
     int         (*remove_breakpoint)(internal_guest*, internal_vcpu*, internal_breakpoint *bp);
     int         (*singlestep)(internal_guest* g, internal_vcpu* vcpu);
 
     // I/O handlers
     void        (*handle_mmio)(internal_vcpu*, gpa_t, int);
+
+    // KVM-realted functions
+    void        (*register_kvm_record_handler)(void);
+    void        (*deregister_kvm_record_handler)(void);
 } typedef internal_hyperkraken_ops;
 
 extern internal_hyperkraken_ops hyperkraken_ops;

@@ -14,7 +14,7 @@ gdt64:
 
 gdt64ptr:
 	gdt64limit:	.word . - gdt64 - 1
-	gdb64addr:	.quad 0
+	gdb64addr:	.int gdt64
 
 .section .text
 .code32
@@ -52,7 +52,7 @@ _enter_longmode:
 	mov cr4, eax
 
 	# make the final switch to long mode
-	mov ecx, 0xC0000000	# get the EFER MSR
+	mov ecx, 0xC0000080	# get the EFER MSR
 	rdmsr
 	or ecx, 0b10000000	# bit 8: LM, enable long mode
 	wrmsr
@@ -60,11 +60,12 @@ _enter_longmode:
 	# enable paging
 	mov eax, cr0
 	or eax, 1 << 31		# bit 31: PG, paging bit
-	or eax, 1 << 0		# bit 0: PM, protection mode
+	or eax, 1 << 4		# bit 4: ET, extension type
+	or eax, 1 << 0		# bit 0: PE, protection mode enable
 	mov cr0, eax
 
 	# load the GDT for long mode
-	lgdt [gdt_ptr]
+	lgdt [gdt64ptr]
 	
 	# jump to 64 bit code
 	jmp 0x8:_64bits

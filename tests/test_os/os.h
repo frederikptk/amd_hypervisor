@@ -15,7 +15,12 @@ struct __attribute__ ((__packed__)) segment_descriptor {
     uint8_t	    base_addr_3;
 } typedef segment_descriptor;
 
-extern segment_descriptor* gdt_ptr;
+struct __attribute__ ((__packed__)) descriptor_ptr {
+	uint16_t	limit;
+	uint32_t	addr;
+} typedef descriptor_ptr;
+
+extern descriptor_ptr gdt_ptr;
 
 // 32-Bit code for pagetable setup
 void* create_mapping_32(void);

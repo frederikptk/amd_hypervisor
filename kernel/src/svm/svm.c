@@ -23,7 +23,7 @@ uint64_t svm_generate_asid(void) {
 	return 1;
 }
 
-void svm_flush_tlb_by_asid(vmcb *v) {
+void svm_flush_tlb_by_asid(internal_vmcb *v) {
 	v->tlb_control = TLB_FLUSH_THIS;
 }
 
@@ -31,7 +31,7 @@ int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g) {
 	svm_internal_guest 	*svm_g;
 
 	TEST_PTR(svm_vcpu, svm_internal_vcpu*,, ERROR)
-	TEST_PTR(svm_vcpu->vcpu_vmcb, vmcb*,, ERROR)
+	TEST_PTR(svm_vcpu->vcpu_vmcb, internal_vmcb*,, ERROR)
 
 	TEST_PTR(g, internal_guest*,, ERROR)
 	svm_g = to_svm_guest(g);
@@ -60,6 +60,8 @@ int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g) {
 
 	svm_vcpu->vcpu_vmcb->rflags = 0x02;
 
+	svm_vcpu->vcpu_vmcb->interrupt_control = 1 << 24;
+
 	svm_vcpu->vcpu_vmcb->gdtr.limit = 0xffff;
 	svm_vcpu->vcpu_vmcb->idtr.limit = 0xffff;
 
@@ -72,7 +74,7 @@ int svm_reset_vcpu(svm_internal_vcpu *svm_vcpu, internal_guest *g) {
 
 	// Intercept all possible exceptions and instructions
 	svm_vcpu->vcpu_vmcb->intercept_exceptions = 0xffffffff;
-	svm_vcpu->vcpu_vmcb->intercept = 0xffffffffffffffff;
+	svm_vcpu->vcpu_vmcb->intercept = 0xffffffffffffff00;
 
 	// Set the nested pagetables
 	svm_vcpu->vcpu_vmcb->n_cr3 = __pa(svm_g->nested_pagetables);
@@ -240,11 +242,11 @@ int svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g) {
 	TEST_PTR(vcpu, internal_vcpu*,, ERROR)
 	svm_vcpu = to_svm_vcpu(vcpu);
 	TEST_PTR(svm_vcpu, svm_internal_vcpu*,, ERROR)
-	TEST_PTR(svm_vcpu->vcpu_vmcb, vmcb*,, ERROR)
-	TEST_PTR(svm_vcpu->host_vmcb, vmcb*,, ERROR)
+	TEST_PTR(svm_vcpu->vcpu_vmcb, internal_vmcb*,, ERROR)
+	TEST_PTR(svm_vcpu->host_vmcb, internal_vmcb*,, ERROR)
 
 	if (vcpu != NULL) {
-		while ((vcpu->state == VCPU_STATE_CREATED || svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF) && vcpu->state != VCPU_STATE_FAILED && i < 3) {
+		while ((vcpu->state == VCPU_STATE_CREATED || svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF) && vcpu->state != VCPU_STATE_FAILED && i < 10) {
 			on_each_cpu((void*)svm_run_vcpu_internal, vcpu, 1);
 			svm_handle_vmexit(vcpu, g);
 			i++;
