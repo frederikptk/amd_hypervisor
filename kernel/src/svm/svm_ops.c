@@ -325,7 +325,7 @@ uint64_t svm_get_vpn_from_level(uint64_t virt_addr, unsigned int level) {
 }
 
 int svm_mmu_walk_available(hpa_t *pte, gpa_t phys_guest, unsigned int *current_level) {
-	printk(DBG "svm_mmu_walk_available\n");
+	//printk(DBG "svm_mmu_walk_available\n");
 	if ((*pte & PAGE_TABLE_MASK) == 0) return -EINVAL;
 	else return 0;
 }
@@ -339,15 +339,15 @@ hpa_t* svm_mmu_walk_next(hpa_t *pte, gpa_t phys_guest, unsigned int *current_lev
 	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
 	next_base = (hpa_t*)__va(*pte & PAGE_TABLE_MASK);
 
-	printk(DBG "svm_mmu_walk_next\n");
-	printk(DBG "next_base: 0x%lx\n", (unsigned long)next_base);
+	//printk(DBG "svm_mmu_walk_next\n");
+	//printk(DBG "next_base: 0x%lx\n", (unsigned long)next_base);
 
 	return (hpa_t*)&next_base[vpn];
 }
 
 hpa_t* svm_mmu_walk_init(internal_mmu *m, gpa_t phys_guest, unsigned int *current_level) {
 	uint64_t	vpn = svm_get_vpn_from_level(phys_guest, *current_level);
-	printk(DBG "svm_mmu_walk_init\n");
+	//printk(DBG "svm_mmu_walk_init\n");
 	*current_level  = m->levels;
 	return &(m->base[vpn]);
 }
@@ -370,7 +370,10 @@ int svm_add_breakpoint_p(internal_guest *g, gpa_t guest_addr) {
 	internal_breakpoint 	*bp;
 	int						ret;
 
+	printk(DBG "svm_add_breakpoint_p\n");
+
 	ret = read_memory(g->mmu, guest_addr, &old_byte, 1);
+	printk(DBG "read at: 0x%lx, val: 0x%lx\n", guest_addr, old_byte);
 	if (ret) goto err;
 
 	new_byte = 0xcc;
@@ -385,6 +388,7 @@ int svm_add_breakpoint_p(internal_guest *g, gpa_t guest_addr) {
 
 	bp->old_mem = old_byte;
 	bp->guest_addr_p = guest_addr;
+	bp->num = g->breakpoints_cnt;
 
 	insert_breakpoint(g, bp);
 
@@ -400,6 +404,8 @@ int svm_add_breakpoint_v(internal_guest *g, gva_t guest_addr) {
 	internal_breakpoint 	*bp;
 	gpa_t					phys_guest;
 	int						ret;
+
+	printk(DBG "svm_add_breakpoint_v\n");
 
 	ret = 0;
 	phys_guest = svm_mmu_gva_to_gpa(g, guest_addr);
@@ -420,6 +426,7 @@ int svm_add_breakpoint_v(internal_guest *g, gva_t guest_addr) {
 	bp->old_mem = old_byte;
 	bp->guest_addr_p = phys_guest;
 	bp->guest_addr_v = guest_addr;
+	bp->num = g->breakpoints_cnt;
 
 	insert_breakpoint(g, bp);
 
@@ -448,6 +455,8 @@ int svm_singlestep(internal_guest *g, internal_vcpu *vcpu) {
 	svm_internal_vcpu* svm_vcpu;
 	svm_vcpu = to_svm_vcpu(vcpu);
 
+	vcpu->state = VCPU_STATE_SINGLESTEP;
+
 	old_rflags = svm_vcpu->vcpu_vmcb->rflags;
 	svm_vcpu->vcpu_vmcb->rflags |= (uint64_t)1 << 8;
 
@@ -471,47 +480,81 @@ int svm_handle_breakpoint(internal_guest *g, internal_vcpu *vcpu) {
 	svm_vcpu = to_svm_vcpu(vcpu);
 	virt_guest = svm_vcpu->vcpu_vmcb->rip;
 
-	// First, look up which breakpoint belongs to that address
-	bp = find_breakpoint_by_gva(g, virt_guest);
+	printk(DBG "HIT BREAKPOINT AT: 0x%lx\n", svm_vcpu->vcpu_vmcb->rip);
 
-	// If we could not find a breakpoint with that virtual address,
-	// iterate over all breakpoints and look if the physical addresses match.
-	// If this is the case, insert the virtual address of the breakpoint (RIP)
-	// into the internal_breakpoint structure.
-	if (bp == NULL) {
-		phys_guest = svm_mmu_gva_to_gpa(g, virt_guest);
+	// First, look up which breakpoint belongs to that address
+
+	if ((svm_vcpu->vcpu_vmcb->efer & EFER_LMA) && (svm_vcpu->vcpu_vmcb->cr0 & X86_CR0_PG)) {
+		// Long mode
+		bp = find_breakpoint_by_gva(g, virt_guest);
+
+		// If we could not find a breakpoint with that virtual address,
+		// iterate over all breakpoints and look if the physical addresses match.
+		// If this is the case, insert the virtual address of the breakpoint (RIP)
+		// into the internal_breakpoint structure.
+		if (bp == NULL) {
+			phys_guest = svm_mmu_gva_to_gpa(g, virt_guest);
+			bp = find_breakpoint_by_gpa(g, phys_guest);
+
+			// Only happens if the guest uses internally the int3 instruction.
+			// The condition is only true, if there are int3 instructions which
+			// are not set by the hypervisor.
+			if (bp == NULL) {
+				ret = -EFAULT;
+				printk(DBG "No breapoint registered for address\n");
+				goto err;
+			}
+
+			bp->guest_addr_v = virt_guest;
+		} else {
+			// Look if we filled in the physical address of a breakpoint.
+			if (bp->guest_addr_p == 0) {
+				phys_guest = svm_mmu_gva_to_gpa(g, virt_guest);
+				bp->guest_addr_p = phys_guest;
+			}
+		}
+	} else {
+		// Protection mode non-paged
+		phys_guest = virt_guest;
 		bp = find_breakpoint_by_gpa(g, phys_guest);
 
-		// Only happens if the guest uses internally the int3 instruction.
-		// The condition is only true, if there are int3 instructions which
-		// are not set by the hypervisor.
 		if (bp == NULL) {
 			ret = -EFAULT;
+			printk(DBG "No breapoint registered for address\n");
 			goto err;
-		}
-
-		bp->guest_addr_v = virt_guest;
-	} else {
-		// Look if we filled in the physical address of a breakpoint.
-		if (bp->guest_addr_p == 0) {
-			phys_guest = svm_mmu_gva_to_gpa(g, virt_guest);
-			bp->guest_addr_p = phys_guest;
 		}
 	}
 
+	vcpu->state = VCPU_STATE_BREAKPOINT;
+
 	// Write the old byte at the breakpoint address
 	byte = bp->old_mem;
+	printk(DBG "writing at: 0x%lx, val: 0x%lx\n", bp->guest_addr_p, byte);
 	ret = write_memory(g->mmu, bp->guest_addr_p, &byte, 1);
 	if (ret) goto err;
 
 	// Singlestep
+	printk(DBG "Singlestep\n");
+
 	ret = svm_singlestep(g, vcpu);
 	if (ret) goto err;
 
+	printk(DBG "Singlestep done\n");
+
 	// Write the int3 again at the guest address
 	byte = 0xcc;
+	printk(DBG "writing at: 0x%lx, val: 0x%lx\n", bp->guest_addr_p, byte);
 	ret = write_memory(g->mmu, bp->guest_addr_p, &byte, 1);
 	if (ret) goto err;
+
+	// Increase the converage counter
+	if (g->fuzzing_coverage != (uint64_t*)NULL) {
+		if (bp->num < (uint64_t)(g->fuzzing_coverage_size / sizeof(uint64_t))) g->fuzzing_coverage[bp->num]++;
+	}
+
+	vcpu->state = VCPU_STATE_BREAKPOINT;
+
+	printk(DBG "BREAKPOINT done!\n");
 
 err:
 	return ret;

@@ -125,7 +125,7 @@ void destroy_guest(internal_guest *g) {
         destroy_all_breakpoints(g);
 
         // Destroy the fuzzing coverage mmap.
-        if (g->fuzzing_coverage != NULL) kfree(g->fuzzing_coverage);
+        if (g->fuzzing_coverage != (uint64_t*)NULL) kfree(g->fuzzing_coverage);
 
 		// Free all other pointers.
 		hyperkraken_ops.destroy_arch_internal_guest(g);

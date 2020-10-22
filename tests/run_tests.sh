@@ -18,6 +18,7 @@ echo "################################"
 clang -Wall -I../include testcases/cow.c -o output/cow
 clang -Wall -I../include testcases/infinite_loop.c -o output/infinite_loop
 clang -Wall -I../include testcases/multiple_guests.c -o output/multiple_guests
+clang -Wall -I../include testcases/breakpoints.c -o output/breakpoints
 
 echo "################################"
 echo "         RUNNING TESTS"
@@ -38,16 +39,24 @@ cd output
 #echo "[TEST PASSED]"
 
 
-echo "[TEST]: MULTIPLE GUESTS"
-sudo ./multiple_guests > multiple_guests.output
-diff multiple_guests.output ../testcases/multiple_guests.output
+#echo "[TEST]: MULTIPLE GUESTS"
+#sudo ./multiple_guests > multiple_guests.output
+#diff multiple_guests.output ../testcases/multiple_guests.output
+#if (( $? != 0 )); then
+#    echo "[TEST FAILED]"
+#else
+#    echo "[TEST PASSED]"
+#fi
+
+
+echo "[TEST]: BREAKPOINTS"
+sudo ./breakpoints > breakpoints.output
+diff breakpoints.output ../testcases/breakpoints.output
 if (( $? != 0 )); then
     echo "[TEST FAILED]"
 else
     echo "[TEST PASSED]"
 fi
-
-
 
 
 # Cleanup

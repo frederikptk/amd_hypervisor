@@ -28,7 +28,7 @@ struct internal_guest {
     internal_vcpu*              vcpus[MAX_NUM_VCPUS];
     struct rw_semaphore         vcpu_lock;
     internal_mmu*               mmu;
-    void*                       fuzzing_coverage;
+    uint64_t*                   fuzzing_coverage;
     uint64_t                    fuzzing_coverage_size;
     DECLARE_HASHTABLE           (breakpoints, 7); // uses virtual breakpoint addresses as keys
     uint64_t                    breakpoints_cnt;
@@ -59,6 +59,7 @@ struct internal_breakpoint {
     gva_t                       guest_addr_v;
     gpa_t                       guest_addr_p;
     uint64_t                    old_mem;
+    uint64_t                    num;
     struct hlist_node           hlist;
 } typedef internal_breakpoint;
 
@@ -68,7 +69,7 @@ void insert_breakpoint(internal_guest *g, internal_breakpoint *bp);
 void remove_breakpoint(internal_guest *g, internal_breakpoint *bp);
 void destroy_all_breakpoints(internal_guest *g); // will be called upon guest destruction
 
-enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED, VCPU_STATE_DESTROYED, VCPU_STATE_SINGLESTEP} typedef vcpu_state;
+enum vcpu_state {VCPU_STATE_CREATED, VCPU_STATE_RUNNING, VCPU_STATE_PAUSED, VCPU_STATE_FAILED, VCPU_STATE_DESTROYED, VCPU_STATE_SINGLESTEP, VCPU_STATE_BREAKPOINT} typedef vcpu_state;
 
 struct internal_vcpu {
     uint64_t                    id;

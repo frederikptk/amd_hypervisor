@@ -17,7 +17,7 @@
 
 // TODO: check if this is secure
 DEFINE_MUTEX(fuzz_mmap_mutex);
-void* 		fuzz_mmap;
+uint64_t* 	fuzz_mmap;
 uint64_t	fuzz_map_size;
 
 static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long argp) {
@@ -29,6 +29,7 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 	internal_vcpu				*current_vcpu;
 	internal_memory_region		*current_memory_region;
 	uint64_t*					breakpoints_array;
+	internal_breakpoint*		bp;
 
 	user_arg_registers 			regs;
 	user_memory_region			memory_region;
@@ -188,6 +189,8 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 		case HYPERKRAKEN_IOCTL_VCPU_RUN:
 			TEST_PTR(argp, unsigned long,,-EFAULT)
 
+			printk(DBG "VCPU_RUN\n");
+
 			if (copy_from_user((void*)&id_data, (void __user *)argp, sizeof(user_vcpu_guest_id))) {
 				return -EFAULT;
 			}
@@ -246,63 +249,27 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			break;
 
 		case HYPERKRAKEN_SET_FUZZ_CNTR_REGION:
-			/*TEST_PTR(argp, unsigned long,,-EFAULT)
-
-			if (copy_from_user((void*)&memory_region, (void __user *)argp, sizeof(user_memory_region))) {
+			TEST_PTR(argp, unsigned long,,-EFAULT)
+			
+			if (copy_from_user((void*)&id, (void __user *)argp, sizeof(uint64_t))) {
 				return -EFAULT;
 			}
-
-			if (current_memory_region->size % PAGE_SIZE != 0) {
-				printk(DBG "Fuzzing coverage counter region size should be a multiple of PAGE_SIZE\n");
-				return -EFAULT;
-			}
-			g->fuzzing_coverage_pages_cnt = (uint64_t)(current_memory_region->size / PAGE_SIZE) + 1;
 
 			guest_list_lock();
-			g = map_guest_id_to_guest(memory_region.guest_id);
+
+			g = map_guest_id_to_guest(id);
 			TEST_PTR(g, internal_guest*, guest_list_unlock(), -EINVAL)
 
-			current_memory_region = kzalloc(sizeof(internal_memory_region), GFP_KERNEL);
-			TEST_PTR(current_memory_region, internal_memory_region*, guest_list_unlock(), -ENOMEM);
-
-			if (current_memory_region->userspace_addr != (uint64_t)NULL) {
-				mmap_read_lock(current->mm);
-
-				g->fuzzing_coverage_pages 	= kzalloc(g->fuzzing_coverage_pages_cnt * sizeof(struct page *), GFP_KERNEL);
-				g->fuzzing_coverage 		= kzalloc(g->fuzzing_coverage_pages_cnt * sizeof(void*), GFP_KERNEL);
-
-				kzalloc((int)((memory_region.size / PAGE_SIZE) + 1) * sizeof(struct page *), GFP_KERNEL);
-
-				if (pin_user_pages(current_memory_region->userspace_addr, g->fuzzing_coverage_pages_cnt, FOLL_LONGTERM | FOLL_WRITE | FOLL_FORCE, &g->fuzzing_coverage_pages[0], NULL) != (current_memory_region->size / PAGE_SIZE)) {
-					printk(DBG "Could not pin user pages for fuzzing coverage\n");
-					
-					mmap_read_unlock(current->mm);
-					guest_list_unlock();
-					return -ENOMEM;
-				}
-
-				for (i = 0; i < g->fuzzing_coverage_pages_cnt; i++) {
-					g->fuzzing_coverage[i] = kmap(g->fuzzing_coverage_pages[i]);
-				}
-
-				if (g->fuzzing_coverage == NULL) {
-					printk(DBG "Could not kmap user pages for fuzzing coverage\n");
-					
-					mmap_read_unlock(current->mm);
-					guest_list_unlock();
-					return -ENOMEM;
-				}
-
-				mmap_read_unlock(current->mm);
-			}
-
-			guest_list_unlock();
-
-			break;*/
+			// Aquire a write lock here in order to prevent VCPUs from running.
+			guest_vcpu_write_lock(g);
 
 			g->fuzzing_coverage = fuzz_mmap;
 			g->fuzzing_coverage_size = fuzz_map_size;
-			mutex_unlock(fuzz_mmap_mutex);
+			
+			mutex_unlock(&fuzz_mmap_mutex);
+			guest_vcpu_write_unlock(g);
+			guest_list_unlock();
+
 			break;
 
 		case HYPERKRAKEN_SET_BREAKPOINTS:
@@ -320,7 +287,8 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			if (breakpoints.sz > MAX_BREAKPOINTS_LIST_LEN) return -EFAULT;
 
 			breakpoints_array = (uint64_t*) kmalloc(breakpoints.sz, GFP_KERNEL);
-			if (copy_from_user((void*)&breakpoints_array[0], (void __user *)breakpoints.addr, sizeof(breakpoints.sz))) {
+
+			if (copy_from_user((void*)&breakpoints_array[0], (void __user *)breakpoints.addr, breakpoints.sz)) {
 				return -EFAULT;
 			}
 
@@ -328,12 +296,20 @@ static long unlocked_ioctl(struct file *filp, unsigned int cmd, unsigned long ar
 			guest_vcpu_write_lock(g);
 			if (breakpoints.virt) {
 				for (i = 0; i < (unsigned int)(breakpoints.sz / sizeof(uint64_t)); i++) {
-					hyperkraken_ops.add_breakpoint_v(g, breakpoints_array[i]);
+					bp = find_breakpoint_by_gva(g, breakpoints_array[i]);
+					if (bp == NULL) {
+						printk(DBG "Insert virt BP at: 0x%lx\n", breakpoints_array[i]);
+						hyperkraken_ops.add_breakpoint_v(g, breakpoints_array[i]);
+					}
 				}
 			}
 			else {
 				for (i = 0; i < (unsigned int)(breakpoints.sz / sizeof(uint64_t)); i++) {
-					hyperkraken_ops.add_breakpoint_p(g, breakpoints_array[i]);
+					bp = find_breakpoint_by_gpa(g, breakpoints_array[i]);
+					if (bp == NULL) {
+						printk(DBG "Insert phys BP at: 0x%lx\n", breakpoints_array[i]);
+						hyperkraken_ops.add_breakpoint_p(g, breakpoints_array[i]);
+					}
 				}
 			}
 
@@ -359,11 +335,11 @@ static int mmap_fuzz(struct file *file, struct vm_area_struct *vma) {
 
 	printk(DBG "mmap_fuzz\n");
 
-	mutex_lock(fuzz_mmap_mutex);
+	mutex_lock(&fuzz_mmap_mutex);
 
 	size = vma->vm_end - vma->vm_start;
 	
-	fuzz_mmap = kmalloc(size, GFP_KERNEL);
+	fuzz_mmap = (uint64_t*)kzalloc(size, GFP_KERNEL);
 	fuzz_map_size = size;
 
 	address = (unsigned long)fuzz_mmap;
@@ -407,7 +383,7 @@ static struct proc_ops proc_ctl_fops = {
 };
 
 static struct proc_ops proc_fuzz_fops = {
-	.mmap = mmap_fuzz,
+	.proc_mmap = mmap_fuzz,
 };
 
 void init_ctl_interface(){

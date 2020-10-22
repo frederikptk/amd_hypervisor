@@ -296,18 +296,54 @@ uint64_t get_pagetable_attributes(internal_mmu *m, gpa_t phys_guest) {
 }
 
 int  write_memory(internal_mmu *m, gpa_t phys_guest, void *src, size_t sz) {
-	unsigned int    level;
-    hpa_t          	*current_pte;
-	void*			page_ptr;
+	unsigned int    		level;
+    hpa_t          			*current_pte;
+	void*					page_ptr;
+	internal_memory_region* region;
 
 	if (sz > PAGE_SIZE) return -EINVAL;
 
+	region = mmu_map_guest_addr_to_memory_region(m, phys_guest);
+
 	for_each_mmu_level(current_pte, m, phys_guest, level) {
         if (level == 1) {
-			page_ptr = memremap((resource_size_t)(*current_pte & PAGE_TABLE_MASK), PAGE_SIZE, 0);
-			memcpy(page_ptr, src, sz);
-			memunmap(page_ptr);
-            return 0;
+			//printk(DBG "memremap at mem: 0x%lx\n", (*current_pte & PAGE_TABLE_MASK));
+			page_ptr = memremap((resource_size_t)(*current_pte & PAGE_TABLE_MASK), PAGE_SIZE, MEMREMAP_WB);
+			if (page_ptr != NULL) {
+				memcpy((void*)(page_ptr + (phys_guest & PAGE_OFFSET_MASK)), src, sz);
+				memunmap(page_ptr);
+				return 0;
+			} else {
+				printk(DBG "memremap error\n");
+				return -EFAULT;
+			}
+        }
+
+		// Map the user memory if it is not available
+		if (hyperkraken_ops.mmu_walk_available(current_pte, phys_guest, &level)) {
+			goto map_mem;
+		}
+    }
+
+map_mem:
+	// Map the user memory if it is not available
+	if (map_user_memory(m, m->base, phys_guest & PAGE_TABLE_MASK, (region->userspace_addr + (phys_guest - region->guest_addr)) & PAGE_TABLE_MASK, region)) {
+		printk(DBG "map_user_memory error\n");
+		return -EFAULT;
+	}
+
+	for_each_mmu_level(current_pte, m, phys_guest, level) {
+        if (level == 1) {
+			//printk(DBG "memremap at mem: 0x%lx\n", (*current_pte & PAGE_TABLE_MASK));
+			page_ptr = memremap((resource_size_t)(*current_pte & PAGE_TABLE_MASK), PAGE_SIZE, MEMREMAP_WB);
+			if (page_ptr != NULL) {
+				memcpy((void*)(page_ptr + (phys_guest & PAGE_OFFSET_MASK)), src, sz);
+				memunmap(page_ptr);
+				return 0;
+			} else {
+				printk(DBG "memremap error\n");
+				return -EFAULT;
+			}
         }
     }
 
@@ -315,18 +351,54 @@ int  write_memory(internal_mmu *m, gpa_t phys_guest, void *src, size_t sz) {
 }
 
 int  read_memory(internal_mmu *m, gpa_t phys_guest, void *dst, size_t sz) {
-	unsigned int    level;
-    hpa_t          	*current_pte;
-	void*			page_ptr;
+	unsigned int    		level;
+    hpa_t          			*current_pte;
+	void*					page_ptr;
+	internal_memory_region* region;
 
 	if (sz > PAGE_SIZE) return -EINVAL;
 
+	region = mmu_map_guest_addr_to_memory_region(m, phys_guest);
+
 	for_each_mmu_level(current_pte, m, phys_guest, level) {
         if (level == 1) {
-			page_ptr = memremap((resource_size_t)(*current_pte & PAGE_TABLE_MASK), PAGE_SIZE, 0);
-			memcpy(dst, page_ptr, sz);
-			memunmap(page_ptr);
-            return 0;
+			//printk(DBG "memremap at mem: 0x%lx\n", (*current_pte & PAGE_TABLE_MASK));
+			page_ptr = memremap((resource_size_t)(*current_pte & PAGE_TABLE_MASK), PAGE_SIZE, MEMREMAP_WB);
+			if (page_ptr != NULL) {
+				memcpy(dst, (void*)(page_ptr + (phys_guest & PAGE_OFFSET_MASK)), sz);
+				memunmap(page_ptr);
+				return 0;
+			} else {
+				printk(DBG "memremap error\n");
+				return -EFAULT;
+			}
+        }
+
+		// Map the user memory if it is not available
+		if (hyperkraken_ops.mmu_walk_available(current_pte, phys_guest, &level)) {
+			goto map_mem;
+		}
+    }
+
+map_mem:
+	// Map the user memory if it is not available
+	if (map_user_memory(m, m->base, phys_guest & PAGE_TABLE_MASK, (region->userspace_addr + (phys_guest - region->guest_addr)) & PAGE_TABLE_MASK, region)) {
+		printk(DBG "map_user_memory error\n");
+		return -EFAULT;
+	}
+
+	for_each_mmu_level(current_pte, m, phys_guest, level) {
+        if (level == 1) {
+			//printk(DBG "memremap at mem: 0x%lx\n", (*current_pte & PAGE_TABLE_MASK));
+			page_ptr = memremap((resource_size_t)(*current_pte & PAGE_TABLE_MASK), PAGE_SIZE, MEMREMAP_WB);
+			if (page_ptr != NULL) {
+				memcpy(dst, (void*)(page_ptr + (phys_guest & PAGE_OFFSET_MASK)), sz);
+				memunmap(page_ptr);
+				return 0;
+			} else {
+				printk(DBG "memremap error\n");
+				return -EFAULT;
+			}
         }
     }
 

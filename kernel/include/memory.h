@@ -10,6 +10,7 @@ typedef struct internal_guest internal_guest;
 typedef struct internal_vcpu internal_vcpu;
 
 #define PAGE_TABLE_MASK             (uint64_t)0x7FFFFFFFFFFFF000 // Also mask out NX bit (bit 63)
+#define PAGE_OFFSET_MASK            (uint64_t)0xFFF
 
 struct internal_memory_region {
     hva_t               userspace_addr;

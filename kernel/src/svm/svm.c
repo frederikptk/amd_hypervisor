@@ -129,7 +129,9 @@ void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
 	// We set clean bits as needed.
 	svm_vcpu->vcpu_vmcb->vmcb_clean = VMCB_DIRTY_ALL_CLEAN;
 
+	printk("\n");
 	printk(DBG "#VMEXIT exitcode: 0x%lx, exitinfo1: 0x%lx, exitinfo2: 0x%lx\n", (unsigned long)svm_vcpu->vcpu_vmcb->exitcode, (unsigned long)svm_vcpu->vcpu_vmcb->exitinfo1, (unsigned long)svm_vcpu->vcpu_vmcb->exitinfo2);
+	printk("\n");
 
 	switch (svm_vcpu->vcpu_vmcb->exitcode) {
 		case VMEXIT_NPF:
@@ -144,9 +146,10 @@ void svm_handle_vmexit(internal_vcpu *vcpu, internal_guest *g) {
 
 			// Singlestepping
 			if (svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_EXCP_BASE + EXCEPTION_DB) {
-				if (vcpu->state == VCPU_STATE_SINGLESTEP) {
+				/*if (vcpu->state == VCPU_STATE_SINGLESTEP) {
 					vcpu->state = VCPU_STATE_PAUSED;
-				}
+				}*/
+				break;
 			}
 
 			// Breakpoint handling
@@ -223,7 +226,7 @@ void svm_run_vcpu_internal(void *info) {
 		wrmsrl_safe(MSR_FS_BASE, host_fs_base);
 		wrmsrl_safe(MSR_GS_BASE, host_gs_base);
 		
-		vcpu->state = VCPU_STATE_PAUSED;
+		//vcpu->state = VCPU_STATE_PAUSED;
 
 		if (svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_INVALID) vcpu->state = VCPU_STATE_FAILED;
 
@@ -246,11 +249,19 @@ int svm_run_vcpu(internal_vcpu *vcpu, internal_guest *g) {
 	TEST_PTR(svm_vcpu->host_vmcb, internal_vmcb*,, ERROR)
 
 	if (vcpu != NULL) {
-		while ((vcpu->state == VCPU_STATE_CREATED || svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF) && vcpu->state != VCPU_STATE_FAILED && i < 10) {
+		while ((vcpu->state == VCPU_STATE_CREATED ||
+				vcpu->state == VCPU_STATE_PAUSED ||
+				svm_vcpu->vcpu_vmcb->exitcode == VMEXIT_NPF ||
+				vcpu->state == VCPU_STATE_BREAKPOINT ||
+				vcpu->state == VCPU_STATE_SINGLESTEP)
+				&& vcpu->state != VCPU_STATE_FAILED
+				&& i < 100) {
+			//printk(DBG "vcpu state: 0x%lx", vcpu->state);
 			on_each_cpu((void*)svm_run_vcpu_internal, vcpu, 1);
 			svm_handle_vmexit(vcpu, g);
 			i++;
 		}
+		vcpu->state = VCPU_STATE_PAUSED;
 	
 		return 0;
 	} else {
