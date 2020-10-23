@@ -98,6 +98,11 @@ struct __attribute__ ((__packed__)) user_breakpoints {
 	void*				addr;
 } typedef user_breakpoints;
 
+struct __attribute__ ((__packed__)) user_intercepts {
+	uint64_t			guest_id;
+	uint64_t			vectors;
+	uint64_t			events;
+} typedef intercepts;
 
 #define ERROR			-1
 #define SUCCESS			0

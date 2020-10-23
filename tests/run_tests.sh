@@ -19,6 +19,7 @@ clang -Wall -I../include testcases/cow.c -o output/cow
 clang -Wall -I../include testcases/infinite_loop.c -o output/infinite_loop
 clang -Wall -I../include testcases/multiple_guests.c -o output/multiple_guests
 clang -Wall -I../include testcases/breakpoints.c -o output/breakpoints
+clang -Wall -I../include testcases/tracing.c -o output/tracing
 
 echo "################################"
 echo "         RUNNING TESTS"
@@ -49,15 +50,24 @@ cd output
 #fi
 
 
-echo "[TEST]: BREAKPOINTS"
-sudo ./breakpoints > breakpoints.output
-diff breakpoints.output ../testcases/breakpoints.output
+#echo "[TEST]: BREAKPOINTS"
+#sudo ./breakpoints > breakpoints.output
+#diff breakpoints.output ../testcases/breakpoints.output
+#if (( $? != 0 )); then
+#    echo "[TEST FAILED]"
+#else
+#    echo "[TEST PASSED]"
+#fi
+
+
+echo "[TEST]: KVM TRACING"
+sudo ./tracing > tracing.output
+diff tracing.output ../testcases/tracing.output
 if (( $? != 0 )); then
     echo "[TEST FAILED]"
 else
     echo "[TEST PASSED]"
 fi
-
 
 # Cleanup
 sudo rmmod hyperkraken
