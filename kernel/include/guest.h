@@ -88,7 +88,7 @@ void            for_every_vcpu(internal_guest *g, void(*callback)(internal_vcpu*
 struct internal_hyperkraken_ops {
     // Managing guests/VCPUs
     int         (*run_vcpu)(internal_vcpu*, internal_guest*);
-    void*       (*create_arch_internal_vcpu)(internal_guest*);
+    void*       (*create_arch_internal_vcpu)(internal_guest*, internal_vcpu*);
     void*       (*simple_copy_arch_internal_vcpu)(internal_guest*, internal_vcpu*, internal_vcpu*);
     int         (*destroy_arch_internal_vcpu)(internal_vcpu*);
 

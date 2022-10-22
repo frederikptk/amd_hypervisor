@@ -7,7 +7,7 @@
 #include <stddef.h>
 #include <linux/list.h>
 
-void* 	svm_create_arch_internal_vcpu(internal_guest *g);
+void* 	svm_create_arch_internal_vcpu(internal_guest *g, internal_vcpu* vcpu);
 void*   svm_simple_copy_arch_internal_vcpu(internal_guest *copy_g, internal_vcpu *vcpu, internal_vcpu* copy_vcpu);
 int 	svm_destroy_arch_internal_vcpu(internal_vcpu *vcpu);
 void* 	svm_create_internal_guest(void);

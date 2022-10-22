@@ -152,7 +152,7 @@ internal_vcpu* create_vcpu(internal_guest *g) {
 
     vcpu->state = VCPU_STATE_CREATED;
 
-    vcpu->arch_internal_vcpu = hyperkraken_ops.create_arch_internal_vcpu(g);
+    vcpu->arch_internal_vcpu = hyperkraken_ops.create_arch_internal_vcpu(g, vcpu);
     if (vcpu->arch_internal_vcpu == NULL) {
         kfree(vcpu);
         return NULL;

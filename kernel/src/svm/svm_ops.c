@@ -84,7 +84,7 @@ void svm_destroy_arch_internal_guest(internal_guest *g) {
 	}
 }
 
-void* svm_create_arch_internal_vcpu(internal_guest *g) {
+void* svm_create_arch_internal_vcpu(internal_guest *g, internal_vcpu* vcpu) {
 	svm_internal_guest	*svm_g;
 	svm_internal_vcpu	*svm_vcpu;
 
@@ -120,7 +120,7 @@ void* svm_simple_copy_arch_internal_vcpu(internal_guest *copy_g, internal_vcpu *
 	TEST_PTR(copy_svm_g, svm_internal_guest*,, NULL)
 	TEST_PTR(svm_vcpu, svm_internal_vcpu*,, NULL)
 
-	copy_svm_vcpu = (svm_internal_vcpu*)svm_create_arch_internal_vcpu(copy_g);
+	copy_svm_vcpu = (svm_internal_vcpu*)svm_create_arch_internal_vcpu(copy_g, copy_vcpu);
 	
 	memcpy(copy_svm_vcpu->vcpu_vmcb, svm_vcpu->vcpu_vmcb, PAGE_SIZE);
 	memcpy(copy_svm_vcpu->vcpu_regs, svm_vcpu->vcpu_regs, PAGE_SIZE);
