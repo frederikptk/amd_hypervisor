@@ -104,7 +104,7 @@ _Static_assert (sizeof(internal_vmcb) == 0x698, "vmcb struct size false");
 
 // a struct representing the guest general purpose register state: these
 // will not be stored in the VMCB
-struct __attribute__ ((__packed__)) gp_regs {
+struct __attribute__ ((__packed__)) svm_gp_regs {
 	uint64_t 	rbx;
 	uint64_t 	rcx;
 	uint64_t 	rdx;
@@ -135,7 +135,7 @@ struct __attribute__ ((__packed__)) gp_regs {
 	uint64_t	xmm13[2];
 	uint64_t	xmm14[2];
 	uint64_t	xmm15[2];
-} typedef gp_regs;
+} typedef svm_gp_regs;
 
 // Intercept related
 /*

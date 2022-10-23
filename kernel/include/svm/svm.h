@@ -7,7 +7,7 @@
 struct svm_internal_vcpu {
 	internal_vmcb*	vcpu_vmcb;
 	internal_vmcb*	host_vmcb;
-	gp_regs*		vcpu_regs;
+	svm_gp_regs*		vcpu_regs;
 	uint64_t		host_fs_base;
 	uint64_t		host_gs_base;
 } typedef svm_internal_vcpu;

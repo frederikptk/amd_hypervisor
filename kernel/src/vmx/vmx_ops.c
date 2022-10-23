@@ -14,23 +14,6 @@ void* vmx_create_arch_internal_guest(internal_guest *g) {
 	return (void*)vmx_g;
 }
 
-void vmx_vmxon_internal(void *info) {
-	internal_vcpu 				*vcpu;
-	vmx_internal_vcpu			*vmx_vcpu;
-
-	vcpu = (internal_vcpu*) 	info;
-	vmx_vcpu = to_vmx_vcpu(vcpu);
-
-	if (get_cpu() == vcpu->physical_core) {
-		printk(DBG "Running on CPU: %d\n", smp_processor_id());
-		int ret = vmx_vmxon(vmx_vcpu->vmxon_region);
-
-		if (ret != 0) {
-			printk(DBG "Error executing vmxon.");
-		}
-	}
-}
-
 void* vmx_create_arch_internal_vcpu(internal_guest *g, internal_vcpu* vcpu) {
 	vmx_internal_guest	*vmx_g;
 	vmx_internal_vcpu	*vmx_vcpu;
@@ -42,17 +25,15 @@ void* vmx_create_arch_internal_vcpu(internal_guest *g, internal_vcpu* vcpu) {
 	vmx_vcpu = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	vmx_vcpu->vmcs_region  = kzalloc(PAGE_SIZE, GFP_KERNEL);
 	vmx_vcpu->vmxon_region = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	vmx_vcpu->vcpu_regs    = kzalloc(sizeof(gp_regs), GFP_KERNEL);
+	vmx_vcpu->vcpu_regs    = kzalloc(sizeof(vmx_gp_regs), GFP_KERNEL);
 	vmx_vcpu->vmm_stack    = kzalloc(PAGE_SIZE, GFP_KERNEL);
 
 	TEST_PTR(vmx_vcpu->vmcs_region, internal_vmcb*, kfree(vmx_vcpu), NULL);
 	TEST_PTR(vmx_vcpu->vmxon_region, internal_vmcb*, kfree(vmx_vcpu); kfree(vmx_vcpu->vmcs_region), NULL);
-	TEST_PTR(vmx_vcpu->vcpu_regs, gp_regs*, kfree(vmx_vcpu); kfree(vmx_vcpu->vmcs_region); kfree(vmx_vcpu->vmxon_region), NULL);
-	TEST_PTR(vmx_vcpu->vmm_stack, gp_regs*, kfree(vmx_vcpu); kfree(vmx_vcpu->vmcs_region); kfree(vmx_vcpu->vmxon_region); kfree(vmx_vcpu->vcpu_regs), NULL);
+	TEST_PTR(vmx_vcpu->vcpu_regs, vmx_gp_regs*, kfree(vmx_vcpu); kfree(vmx_vcpu->vmcs_region); kfree(vmx_vcpu->vmxon_region), NULL);
+	TEST_PTR(vmx_vcpu->vmm_stack, vmx_gp_regs*, kfree(vmx_vcpu); kfree(vmx_vcpu->vmcs_region); kfree(vmx_vcpu->vmxon_region); kfree(vmx_vcpu->vcpu_regs), NULL);
 
 	vmx_reset_vcpu(vmx_vcpu);
-
-	on_each_cpu((void*)vmx_vmxon_internal, vcpu, 1);
 
 	return (void*)vmx_vcpu;
 }
@@ -102,15 +83,15 @@ void init_vmx_hyperkraken_ops(void) {
     hyperkraken_ops.destroy_arch_internal_guest 	= vmx_destroy_arch_internal_guest;
 	hyperkraken_ops.set_vcpu_registers 				= vmx_set_vcpu_registers;
     hyperkraken_ops.get_vcpu_registers 				= vmx_get_vcpu_registers;
-    hyperkraken_ops.set_memory_region 				= vmx_set_memory_region;
-	hyperkraken_ops.map_page_attributes_to_arch		= vmx_map_page_attributes_to_arch;
-	hyperkraken_ops.map_arch_to_page_attributes		= vmx_map_arch_to_page_attributes;
-	hyperkraken_ops.init_mmu						= vmx_init_mmu;
-	hyperkraken_ops.destroy_mmu						= vmx_destroy_mmu;
-	hyperkraken_ops.mmu_walk_available				= vmx_mmu_walk_available;
-	hyperkraken_ops.mmu_walk_next					= vmx_mmu_walk_next;
-	hyperkraken_ops.mmu_walk_init					= vmx_mmu_walk_init;
-	hyperkraken_ops.mmu_gva_to_gpa					= vmx_mmu_gva_to_gpa;
+    hyperkraken_ops.set_memory_region 				= ept_set_memory_region;
+	hyperkraken_ops.map_page_attributes_to_arch		= ept_map_page_attributes_to_arch;
+	hyperkraken_ops.map_arch_to_page_attributes		= ept_map_arch_to_page_attributes;
+	hyperkraken_ops.init_mmu						= ept_init_mmu;
+	hyperkraken_ops.destroy_mmu						= ept_destroy_mmu;
+	hyperkraken_ops.mmu_walk_available				= ept_mmu_walk_available;
+	hyperkraken_ops.mmu_walk_next					= ept_mmu_walk_next;
+	hyperkraken_ops.mmu_walk_init					= ept_mmu_walk_init;
+	hyperkraken_ops.mmu_gva_to_gpa					= ept_mmu_gva_to_gpa;
 	hyperkraken_ops.add_breakpoint_p				= vmx_add_breakpoint_p;
 	hyperkraken_ops.add_breakpoint_v				= vmx_add_breakpoint_v;
 	hyperkraken_ops.remove_breakpoint				= vmx_remove_breakpoint;

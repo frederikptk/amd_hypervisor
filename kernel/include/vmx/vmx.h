@@ -8,8 +8,10 @@ struct __attribute__ ((__packed__)) internal_vmxon typedef internal_vmxon;
 struct vmx_internal_vcpu {
 	internal_vmcs*	vmcs_region;
 	internal_vmxon*	vmxon_region;
-	gp_regs*		vcpu_regs;
+	vmx_gp_regs*	vcpu_regs;
     void*           vmm_stack;
+
+    int             launched;
 } typedef vmx_internal_vcpu;
 
 struct vmx_internal_guest {
@@ -172,7 +174,166 @@ enum vmcs_field_offsets {
     HOST_RIP                      = 0x6c16
 };
 
+// Various VMCS control field definitions
+
+// Primary VM execution controls
+union vmx_pin_based_vm_exec_control {
+    uint64_t all;
+    struct {
+        uint64_t interrupt_window_existing : 1;
+        uint64_t reserved_0 : 2;
+        uint64_t nmi_existing : 1;
+        uint64_t reserved_1 : 2;
+        uint64_t virtual_nmis : 1;
+        uint64_t active_vmx_preemtion_timer : 1;
+        uint64_t process_posted_interrupts : 1;
+    } bits;
+} typedef vmx_pin_based_vm_exec_control;
+
+union vmx_primary_vm_exec_control {
+    uint64_t all;
+    struct {
+        uint64_t reserved_0 : 2;
+        uint64_t interrupt_window_exiting : 1;
+        uint64_t use_tsc_offsetting : 1;
+        uint64_t reserved_1 : 3;
+        uint64_t hlt_exiting : 1;
+        uint64_t reserved_2 : 1;
+        uint64_t invplg_exiting : 1;
+        uint64_t mwait_exiting : 1;
+        uint64_t rdpmc_exiting : 1;
+        uint64_t rdtsc_exiting : 1;
+        uint64_t reserved_3 : 2;
+        uint64_t cr3_load_exiting : 1;
+        uint64_t cr3_store_exiting : 1;
+        uint64_t activate_teriary_controls : 1;
+        uint64_t reserved_4 : 1;
+        uint64_t cr8_load_exiting : 1;
+        uint64_t cr8_store_exiting : 1;
+        uint64_t use_tpr_shadow : 1;
+        uint64_t nmi_window_exiting : 1;
+        uint64_t mov_dr_exiting : 1;
+        uint64_t unconditional_io_exiting : 1;
+        uint64_t use_io_bitmaps : 1;
+        uint64_t reserved_5 : 1;
+        uint64_t monitor_trap_flag : 1;
+        uint64_t use_msr_bitmaps : 1;
+        uint64_t monitor_exiting : 1;
+        uint64_t pause_exiting : 1;
+        uint64_t activate_secondary_controls : 1;
+    } bits;
+} typedef vmx_primary_vm_exec_control;
+
+union vmx_secondary_vm_exec_control {
+    uint64_t all;
+    struct {
+        uint64_t virtualize_apic_access : 1;
+        uint64_t enable_ept : 1;
+        uint64_t descriptor_table_exiting : 1;
+        uint64_t enable_rdtscp : 1;
+        uint64_t virtualize_x2apic_mode : 1;
+        uint64_t enable_vpid : 1;
+        uint64_t wbinvd_exiting : 1;
+        uint64_t unrestricted_guest : 1;
+        uint64_t apic_register_virtualization : 1;
+        uint64_t virtual_interrupt_delivery : 1;
+        uint64_t pause_loop_exiting : 1;
+        uint64_t enable_invpcid : 1;
+        uint64_t enable_vm_functions : 1;
+        uint64_t vmcs_shadowing : 1;
+        uint64_t encls_exiting : 1;
+        uint64_t rdseed_exiting : 1;
+        uint64_t enable_pml : 1;
+        uint64_t ept_violation_ve : 1;
+        uint64_t conceal_vmx_from_pt : 1;
+        uint64_t enable_xsaves_xstors : 1;
+        uint64_t mode_based_exec_control_ept : 1;
+        uint64_t sub_page_write_permissions_for_ept : 1;
+        uint64_t pt_uses_guest_physical_addr : 1;
+        uint64_t use_tsc_scaling : 1;
+        uint64_t enable_user_wait_and_pause : 1;
+        uint64_t enable_pconfig : 1;
+        uint64_t enable_enclv_exiting : 1;
+    } bits;
+} typedef vmx_secondary_vm_exec_control;
+
+union vmx_tertiary_vm_exec_control {
+    uint64_t all;
+    struct {
+        uint64_t loadiwkey_exiting : 1;
+        uint64_t enable_hlat : 1;
+        uint64_t ept_paging_write_control : 1;
+        uint64_t guest_paging_verification : 1;
+    } bits;
+} typedef vmx_tertiary_vm_exec_control;
+
+union vmx_primary_vm_exit_controls {
+    uint64_t all;
+    struct {
+        uint64_t reserved_0 : 2;
+        uint64_t save_debug_controls : 1;
+        uint64_t reserved_1 : 6;
+        uint64_t host_addr_space_size : 1;
+        uint64_t reserved_2 : 2;
+        uint64_t load_ia32_perf_global_ctrl : 1;
+        uint64_t reserved_3 : 2;
+        uint64_t ack_interrupt_on_exit : 1;
+        uint64_t reserved_4 : 2;
+        uint64_t save_ia32_pat : 1;
+        uint64_t load_ia32_pat : 1;
+        uint64_t save_ia32_efer : 1;
+        uint64_t load_ia32_efer : 1;
+        uint64_t save_vmx_preemption_timer_value : 1;
+        uint64_t clear_ia32_bndcfgs : 1;
+        uint64_t conceal_vmx_from_pt : 1;
+        uint64_t clear_ia32_rtit_ctl : 1;
+        uint64_t clear_ia32_lbr_ctl : 1;
+        uint64_t reserved_5 : 1;
+        uint64_t load_cet_state : 1;
+        uint64_t load_pkrs : 1;
+        uint64_t save_ia32_perf_global_ctl : 1;
+        uint64_t activate_secondary_controls : 1;
+    } bits;
+} typedef vmx_primary_vm_exit_controls;
+
+union vmx_vm_entry_controls {
+    uint64_t all;
+    struct {
+        uint64_t reserved_0 : 2;
+        uint64_t load_debug_controls : 1;
+        uint64_t reserved_1 : 6;
+        uint64_t ia32e_mode_guest : 1;
+        uint64_t entry_to_smm : 1;
+        uint64_t deactivate_dual_monitor_treatment : 1;
+        uint64_t reserved_2 : 1;
+        uint64_t load_ia32_perf_global_ctrl : 1;
+        uint64_t load_ia32_pat : 1;
+        uint64_t load_ia32_efer : 1;
+        uint64_t load_ia32_bndcfgs : 1;
+        uint64_t conceal_vmx_from_pt : 1;
+        uint64_t load_ia32_rtit_ctl : 1;
+        uint64_t reserved_3 : 1;
+        uint64_t load_cet_state : 1;
+        uint64_t load_ia32_lbr_ctl : 1;
+        uint64_t load_pkrs : 1;
+    } bits;
+} typedef vmx_vm_entry_controls;
+
 // VM exit reasons
+union vmx_exit_reason {
+    uint32_t all;
+    struct {
+        uint32_t exit_reason : 16;
+        uint32_t always_0 : 1;
+        uint32_t reserved_0: 10;
+        uint32_t enclave_mode : 1;
+        uint32_t pending_mtf_vm_exit : 1;
+        uint32_t exit_from_vmx_root_operation : 1;
+        uint32_t reserved_1 : 1;
+        uint32_t vm_entry_failure : 1;
+    } bits;
+} typedef vmx_exit_reason;
+
 #define VM_EXIT_REASON_EXCEPTION_NMI                0x00
 #define VM_EXIT_REASON_EXTERNAL_INTERRUPT           0x01
 #define VM_EXIT_REASON_TRIPLE_FAULT                 0x02
@@ -234,6 +395,41 @@ enum vmcs_field_offsets {
 #define VM_EXIT_REASON_XRSTORS                      0x40
 #define VM_EXIT_REASON_PCOMMIT                      0x41
 
+// guest general purpose register state
+struct __attribute__ ((__packed__)) vmx_gp_regs {
+    uint64_t 	rax;
+	uint64_t 	rbx;
+	uint64_t 	rcx;
+	uint64_t 	rdx;
+	uint64_t 	rdi;
+	uint64_t 	rsi;
+	uint64_t 	r8;
+	uint64_t 	r9;
+	uint64_t 	r10;
+	uint64_t 	r11;
+	uint64_t 	r12;
+	uint64_t 	r13;
+	uint64_t 	r14;
+	uint64_t 	r15;
+	uint64_t 	rbp;
+	uint64_t	xmm0 [2];
+	uint64_t	xmm1 [2];
+	uint64_t	xmm2 [2];
+	uint64_t	xmm3 [2];
+	uint64_t	xmm4 [2];
+	uint64_t	xmm5 [2];
+	uint64_t	xmm6 [2];
+	uint64_t	xmm7 [2];
+	uint64_t	xmm8 [2];
+	uint64_t	xmm9 [2];
+	uint64_t	xmm10[2];
+	uint64_t	xmm11[2];
+	uint64_t	xmm12[2];
+	uint64_t	xmm13[2];
+	uint64_t	xmm14[2];
+	uint64_t	xmm15[2];
+} typedef vmx_gp_regs;
+
 // VMX assembly wrapper
 extern int vmx_vmxon(uint64_t);
 extern void vmx_vmptrst(uint64_t);
@@ -243,3 +439,7 @@ extern void vmx_vmresume();
 extern void vmx_vmlaunch();
 extern uint64_t vmx_vmread(uint64_t);
 extern void vmx_vmwrite(uint64_t, uint64_t);
+
+extern void vmx_vm_exit();
+extern void vmx_run_vcpu_asm_vmlaunch(void*, vmx_gp_regs);
+extern void vmx_run_vcpu_asm_vmresume(void*, vmx_gp_regs);
