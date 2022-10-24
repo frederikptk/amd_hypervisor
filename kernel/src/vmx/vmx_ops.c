@@ -33,7 +33,7 @@ void* vmx_create_arch_internal_vcpu(internal_guest *g, internal_vcpu* vcpu) {
 	TEST_PTR(vmx_vcpu->vcpu_regs, vmx_gp_regs*, kfree(vmx_vcpu); kfree(vmx_vcpu->vmcs_region); kfree(vmx_vcpu->vmxon_region), NULL);
 	TEST_PTR(vmx_vcpu->vmm_stack, vmx_gp_regs*, kfree(vmx_vcpu); kfree(vmx_vcpu->vmcs_region); kfree(vmx_vcpu->vmxon_region); kfree(vmx_vcpu->vcpu_regs), NULL);
 
-	vmx_reset_vcpu(vmx_vcpu);
+	vmx_reset_vcpu(g, vmx_vcpu);
 
 	return (void*)vmx_vcpu;
 }

@@ -12,6 +12,17 @@ void ept_init_mmu(internal_mmu *m) {
 	INIT_LIST_HEAD(&m->memory_region_list);
 }
 
+uint64_t ept_get_config(internal_mmu *m) {
+    ept_pointer ept_p;
+
+    ept_p.all = 0;
+    ept_p.bits.page_table_walk_len = 3; // Page table walk length (4) - 1
+    ept_p.bits.memory_type = VMX_EPT_CACHE_MEMORY_TYPE_UC;
+    ept_p.bits.base = m->base;
+
+    return ept_p.all;
+}
+
 void ept_destroy_mmu(internal_mmu *m) {
 	if (m->base) kfree(m->base);
 }

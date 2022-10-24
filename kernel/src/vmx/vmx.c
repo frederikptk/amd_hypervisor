@@ -1,4 +1,5 @@
 #include <vmx/vmx.h>
+#include <vmx/ept.h>
 #include <utils.h>
 
 #include <asm/segment.h>
@@ -29,7 +30,7 @@ void vmx_vmxon_internal(void *info) {
 	}
 }
 
-int vmx_reset_vcpu(vmx_internal_vcpu *vmx_vcpu) {
+int vmx_reset_vcpu(internal_guest *g, vmx_internal_vcpu *vmx_vcpu) {
     uint32_t                      msr_vmx_basic;
     vmx_vm_entry_controls         vm_entry_controls;
     vmx_primary_vm_exit_controls  primary_vm_exit_controls;
@@ -45,6 +46,9 @@ int vmx_reset_vcpu(vmx_internal_vcpu *vmx_vcpu) {
     vmx_vcpu->vmxon_region->vmcs_revision_identifier = msr_vmx_basic;
 
     on_each_cpu((void*)vmx_vmxon_internal, vcpu, 1);
+
+    // Set EPT base
+    vmx_vmwrite(EPT_POINTER, ept_get_config(g->mmu));
 
     // Initialize the vmcs region
     vmx_vcpu->vmcs_region->header.vmcs_revision_identifier = msr_vmx_basic;
@@ -177,10 +181,31 @@ void vmx_run_vcpu(vmx_internal_vcpu *vmx_vcpu) {
 }
 
 void vmx_handle_vm_exit(vmx_gp_regs *guest_regs) {
+    vmx_exit_reason exit_reason;
+
     uint32_t current_core = get_cpu();
 
-
     // First, find the correct vcpu struct by using the core ID.
-    uint64_t exit_reason = vmx_vmread(VM_EXIT_REASON);
-    
+    exit_reason.all = vmx_vmread(VM_EXIT_REASON);
+    printk(DBG "exit reason: 0x%lx\n", (unsigned long)exit_reason.bits.exit_reason);
+
+    switch(exit_reason.bits.exit_reason) {
+        case VM_EXIT_REASON_VMCALL:
+        case VM_EXIT_REASON_VMCLEAR:
+        case VM_EXIT_REASON_VMLAUNCH:
+        case VM_EXIT_REASON_VMPTRLD:
+        case VM_EXIT_REASON_VMPTRST:
+        case VM_EXIT_REASON_VMRESUME:
+        case VM_EXIT_REASON_VMXON:
+        case VM_EXIT_REASON_VMXOFF:
+        case VM_EXIT_REASON_INVEPT:
+        case VM_EXIT_REASON_INVVPID:
+            break;
+        case VM_EXIT_REASON_MSR_READ:
+            break;
+        case VM_EXIT_REASON_MSR_WRITE:
+            break;
+        case VM_EXIT_REASON_TRIPLE_FAULT:
+            break;
+    }
 }

@@ -40,7 +40,7 @@ union ept_pml4e {
         uint64_t read : 1;
         uint64_t write : 1;
         uint64_t exec : 1;
-        uint64_t reserved_0 : 5;
+        uint64_t reserved_0 : 5; // must be 0
         uint64_t access : 1;
         uint64_t reserved_1 : 1;
         uint64_t exec_user : 1;
@@ -105,8 +105,46 @@ union ept_pte {
     } bits;
 } typedef ept_pte;
 
+// EPT pointer, settings for all pagetables & pagetable base pointer
+union ept_pointer {
+    uint64_t all;
+    struct {
+        uint64_t memory_type : 3;
+        uint64_t page_table_walk_len : 3; // Length of pagetable walk - 1
+        uint64_t enable_dirty_flag_access : 1;
+        uint64_t enable_access_right_enforcement_for_supervisor_shadowstack : 1;
+        uint64_t reserved_0 : 4;
+        uint64_t base : 52;
+    } bits;
+} typedef ept_pointer;
+
 #define EPT_PAGE_TABLE_MASK 0x0
 #define EPT_RWX             0x7
+
+// Exit qualifications for EPT violations
+union ept_exit_violation {
+    uint64_t all;
+    struct {
+        uint64_t data_read : 1;
+        uint64_t data_write : 1;
+        uint64_t instruction_fetch : 1;
+        uint64_t and_bit_0_cause : 1;
+        uint64_t and_bit_1_cause : 1;
+        uint64_t and_bit_2_cause : 1;
+        uint64_t and_bit_10 : 1;
+        uint64_t guest_linear_addr_valid : 1;
+        uint64_t guest_addr_translation_of_linear_addr : 1;
+        uint64_t user_mode_linear_addr : 1;
+        uint64_t rw_page : 1;
+        uint64_t exec_disabled_page : 1;
+        uint64_t nmi_unblocking_due_to_iret : 1;
+        uint64_t shadow_stack_access : 1;
+        uint64_t ept_entry_bit_60 : 1;
+        uint64_t guest_paging_verification : 1;
+        uint64_t access_async_to_instr_exec : 1;
+        uint64_t reserved_0 : 46;
+    } bits;
+} typedef ept_exit_violation;
 
 void     ept_set_memory_region(internal_guest *g, internal_memory_region *memory_region);
 uint64_t ept_map_page_attributes_to_arch(uint64_t attrib);
